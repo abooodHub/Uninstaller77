@@ -60,7 +60,7 @@
     <!-- Override the legacy native bundle; 2.x ships an affected SQLite build. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
 
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
 
   </ItemGroup>
 
