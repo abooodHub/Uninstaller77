@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><Version>1.0.10</Version><ApplicationIcon>..\..\app\WinUninstaller\Resources\Brand\Uninstaller77.ico</ApplicationIcon></PropertyGroup>
+</Project>

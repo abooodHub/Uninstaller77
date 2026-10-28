@@ -1,0 +1,131 @@
+<Window x:Class="WinUninstaller.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:WinUninstaller.ViewModels"
+        xmlns:pages="clr-namespace:WinUninstaller.Views.Pages"
+        Title="Uninstaller 77" Icon="/Resources/Brand/Uninstaller77.ico"
+        Height="820" Width="1280"
+        MinHeight="620" MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        FlowDirection="{Binding LayoutDirection}"
+        Background="{StaticResource BgBase}">
+
+    <Window.Resources>
+        <!-- DataTemplate routing -->
+        <DataTemplate DataType="{x:Type vm:AppListViewModel}">
+            <pages:AppListPage/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
+            <pages:HistoryPage/>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="236"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ===== SIDEBAR ===== -->
+        <Border Grid.Column="0"
+                Background="{StaticResource BgMantle}"
+                BorderThickness="0,0,1,0"
+                BorderBrush="{StaticResource BgSurface0}">
+            <DockPanel>
+                <!-- App Title Header -->
+                <StackPanel DockPanel.Dock="Top" Margin="20,28,18,30">
+                    <TextBlock Text="Uninstaller 77"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBlue}"/>
+                    <TextBlock Text="{Binding ManagementSubtitle}"
+                               Foreground="{StaticResource FgOverlay}"
+                               FontSize="10" FontWeight="SemiBold"
+                               Margin="2,8,0,0"/>
+                </StackPanel>
+
+                <!-- Navigation Links & Categories -->
+                <StackPanel DockPanel.Dock="Top" Margin="6,0">
+                    <TextBlock Text="{Binding AppSectionTitle}"
+                               Foreground="{StaticResource BgSurface2}"
+                               FontSize="10"
+                               FontWeight="Bold"
+                               Margin="12,12,0,6"/>
+
+                    <Button Style="{StaticResource NavButton}" Command="{Binding NavigateToCommand}" CommandParameter="AllApps">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="▦" Foreground="{StaticResource AccentBlue}" Width="24"/><TextBlock Text="{Binding AllAppsLabel}"/></StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource NavButton}" Command="{Binding NavigateToCommand}" CommandParameter="RecentApps">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="◷" Foreground="{StaticResource AccentTeal}" Width="24"/><TextBlock Text="{Binding RecentAppsLabel}"/></StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource NavButton}" Command="{Binding NavigateToCommand}" CommandParameter="LargeApps">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="▤" Foreground="{StaticResource AccentPeach}" Width="24"/><TextBlock Text="{Binding LargeAppsLabel}"/></StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource NavButton}" Command="{Binding NavigateToCommand}" CommandParameter="StoreApps">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="▣" Foreground="{StaticResource AccentMauve}" Width="24"/><TextBlock Text="{Binding StoreAppsLabel}"/></StackPanel>
+                    </Button>
+
+                    <TextBlock Text="{Binding AuditLogsLabel}"
+                               Foreground="{StaticResource BgSurface2}"
+                               FontSize="10"
+                               FontWeight="Bold"
+                               Margin="12,18,0,6"/>
+
+                    <Button Style="{StaticResource NavButton}" Command="{Binding NavigateToCommand}" CommandParameter="History">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="◴" Foreground="{StaticResource AccentBlue}" Width="24"/><TextBlock Text="{Binding HistoryLabel}"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Command="{Binding RestoreQuarantineCommand}">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="↺" Foreground="{StaticResource AccentGreen}" Width="24"/><TextBlock Text="{Binding RestoreLabel}"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Command="{Binding OpenSettingsCommand}">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="⚙  "/><TextBlock Text="{Binding SettingsLabel}"/></StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Status & Engine Badge at bottom -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="16,0,16,18">
+                    <Separator Background="{StaticResource BgSurface0}" Margin="0,0,0,12"/>
+                    <Border Background="{StaticResource BgSurface0}"
+                            CornerRadius="6"
+                            Padding="10,8">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="●" Foreground="{StaticResource AccentGreen}" FontSize="10" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding ReviewBeforeCleanupLabel}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource FgText}" Margin="4,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding PotentialLeftoversHint}" FontSize="10" Foreground="{StaticResource FgOverlay}" Margin="12,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Foreground="{StaticResource FgOverlay}"
+                               FontSize="10"
+                               Text="{Binding AppList.StatusText}"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="2,8,2,0"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ===== MAIN CONTENT ===== -->
+        <ContentControl x:Name="MainContentHost" Grid.Column="1"
+                        Content="{Binding CurrentViewModel}"/>
+
+        <Border Grid.ColumnSpan="2" Style="{StaticResource ModalOverlay}"
+                Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolToVis}}">
+            <Border Style="{StaticResource ModalCard}" Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24">
+                <StackPanel>
+                    <TextBlock Text="{Binding SettingsTitle}" FontSize="18" FontWeight="Bold" Margin="0,0,0,18"/>
+                    <TextBlock Text="{Binding LanguageLabel}" Foreground="{StaticResource FgOverlay}" Margin="0,0,0,6"/>
+                    <ComboBox SelectedValue="{Binding LanguageCode}" SelectedValuePath="Tag" Margin="0,0,0,14">
+                        <ComboBoxItem Content="English" Tag="en"/>
+                        <ComboBoxItem Content="العربية" Tag="ar"/>
+                    </ComboBox>
+
+                    <Button Content="{Binding CloseLabel}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" Padding="18,7" Command="{Binding CloseSettingsCommand}"/>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</Window>

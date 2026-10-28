@@ -1,0 +1,17 @@
+# .NET generated build output
+bin/
+obj/
+
+# React/Vite generated dependencies and output
+WebUI/node_modules/
+WebUI/dist/
+WebUI/.vite/
+WebUI/*.tsbuildinfo
+
+# Local runtime and test logs (reports/ remains tracked)
+test_results.log
+runtime.log
+crash.log
+discovery.jsonl
+webview.log
+*.user

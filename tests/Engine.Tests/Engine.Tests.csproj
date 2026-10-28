@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Uninstaller77.EngineTests</AssemblyName>
+    <StartupObject>EngineTestsProgram</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The same live engine sources; no copy of the shipping algorithms. -->
+    <Compile Include="../../app/WinUninstaller/Services/*.cs" Link="Services/%(Filename)%(Extension)" />
+    <Compile Include="../../app/WinUninstaller/Models/*.cs" Link="Models/%(Filename)%(Extension)" />
+    <Compile Include="../../app/WinUninstaller/ViewModels/*.cs" Link="ViewModels/%(Filename)%(Extension)" />
+    <Compile Include="../retired/Engineering/**/*.cs" Link="Retired/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="../../app/WinUninstaller/Resources/Strings.*.json" Link="Resources/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+</Project>

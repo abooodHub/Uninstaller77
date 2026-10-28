@@ -1,0 +1,19 @@
+<Window x:Class="WinUninstaller.Views.WebMainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Uninstaller 77" Icon="/Resources/Brand/Uninstaller77.ico" Height="820" Width="1320" MinHeight="620" MinWidth="960"
+        WindowStartupLocation="CenterScreen" Background="#131314">
+    <Grid x:Name="BrowserHost">
+        <Grid x:Name="BrowserContainer">
+            <wv2:WebView2 x:Name="Browser" DefaultBackgroundColor="#121316" />
+        </Grid>
+        <Border x:Name="StartupErrorPanel" Visibility="Collapsed" Background="#161a20" Padding="28" Margin="28" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="680">
+            <StackPanel>
+                <TextBlock x:Name="StartupErrorTitle" Text="WinUninstaller UI could not start" Foreground="#f4f6fa" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock x:Name="StartupErrorText" Margin="0,14,0,0" TextWrapping="Wrap" Foreground="#b6c2d0" />
+                <Button x:Name="OpenClassicButton" Content="Open the classic WPF interface" Click="OpenLegacy_Click" Margin="0,20,0,0" Padding="14,9" HorizontalAlignment="Left" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

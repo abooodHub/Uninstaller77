@@ -1,0 +1,172 @@
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using Microsoft.Web.WebView2.Core;
+
+namespace WinUninstaller.Views;
+
+public partial class WebMainWindow
+{
+    private async Task RunPhase12HealthQaAsync()
+    {
+        var root = @"C:\Uninstaller\reports\PHASE12";
+        var images = Path.Combine(root, "SCREENSHOTS");
+        Directory.CreateDirectory(images);
+        var checks = new List<object>();
+        var originalLanguage = _main.LanguageCode;
+        var cancelStatus = "NotRun";
+        var previousScanReview = false;
+        try
+        {
+            for (var attempt = 0; attempt < 900 && (!_apps.HasConfirmedInventory || _apps.IsLoading); attempt++)
+            {
+                if (!_apps.HasConfirmedInventory && !_apps.IsLoading) _ = _apps.LoadAppsAsync();
+                await Task.Delay(100);
+            }
+            if (!_apps.HasConfirmedInventory) throw new InvalidOperationException($"Phase12 UI scan requires the real confirmed Registry/MSIX inventory. State={_apps.InventoryState}; Error={_apps.InventoryError}; Sources={JsonSerializer.Serialize(_apps.DiscoveryDiagnostics)}");
+
+            _workspacePage = "SoftwareHealth";
+            _main.LanguageCode = "en";
+            ScheduleState();
+            await WaitForUi("en");
+
+            // Exercise the actual cancel button while the supported read-only registry check is active.
+            await Click("health-scan-toggle");
+            await WaitUntil(async () => await Browser.CoreWebView2.ExecuteScriptAsync("Boolean(document.querySelector('.health-progress-track'))") == "true");
+            await Click("health-scan-toggle");
+            await WaitUntil(() => Task.FromResult(!_healthLoading));
+            if (_healthReport?.Status != Services.HealthCheckStatus.Cancelled)
+                throw new InvalidOperationException("The Scan Now / Cancel Scan button did not produce a Cancelled scan state.");
+            cancelStatus = _healthReport.Status.ToString();
+            await Capture("cancelled-en");
+
+            // A fresh manual scan uses the current inventory; it reads uninstall registrations and file existence only.
+            await Click("health-scan-toggle");
+            await WaitUntil(() => Task.FromResult(!_healthLoading));
+            if (_healthReport is null || _healthReport.Status is Services.HealthCheckStatus.NotScanned or Services.HealthCheckStatus.Running)
+                throw new InvalidOperationException("The real read-only health scan did not complete to an explicit state.");
+            var scanSignature = await ReadHealthSignature();
+            var realFindingCount = _healthReport.ConfirmedFindings + _healthReport.PotentialFindings;
+
+            await Click("health-review-previous-toggle");
+            await WaitUntil(async () => await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.health-page')?.dataset.showingPrevious === 'true'") == "true");
+            await Capture("previous-scan-en");
+            _main.LanguageCode = "ar"; ScheduleState(); await WaitForUi("ar");
+            if (await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.health-page')?.dataset.showingPrevious === 'true'") != "true")
+                throw new InvalidOperationException("Switching language closed the previous scan review.");
+            await Capture("previous-scan-ar");
+            _main.LanguageCode = "en"; ScheduleState(); await WaitForUi("en");
+            previousScanReview = true;
+            await Click("health-review-previous-toggle");
+            await WaitUntil(async () => await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.health-page')?.dataset.showingPrevious === 'false'") == "true");
+            if (!string.Equals(scanSignature, await ReadHealthSignature(), StringComparison.Ordinal))
+                throw new InvalidOperationException("Returning from the previous scan changed the latest results.");
+
+            foreach (var size in new[] { (1920, 1080), (1366, 768), (1280, 800) })
+            foreach (var language in new[] { "en", "ar" })
+            {
+                WindowState = WindowState.Normal; Width = size.Item1; Height = size.Item2; Left = 0; Top = 0;
+                _main.LanguageCode = language; ScheduleState();
+                await WaitForUi(language);
+                var currentSignature = await ReadHealthSignature();
+                if (!string.Equals(scanSignature, currentSignature, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Changing language or window size changed health results or restarted the scan.");
+                await Capture($"dashboard-{language}-{size.Item1}x{size.Item2}");
+            }
+
+            WindowState = WindowState.Normal; Width = 1366; Height = 768; _main.LanguageCode = "en"; ScheduleState(); await WaitForUi("en");
+            foreach (var category in Services.SoftwareHealthEngine.CreateChecks())
+            foreach (var language in new[] { "en", "ar" })
+            {
+                _main.LanguageCode = language; ScheduleState(); await WaitForUi(language);
+                await Click("health-detail-" + category.Key);
+                await WaitUntil(async () => await Browser.CoreWebView2.ExecuteScriptAsync("Boolean(document.querySelector('.details-modal'))") == "true");
+                await Task.Delay(300); // let the dialog fade/slide transition finish before capture
+                var modalText = await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.details-modal')?.innerText || ''");
+                if (string.IsNullOrEmpty(modalText)) throw new InvalidOperationException("Health check detail panel was empty: " + category.Key);
+                await Capture($"detail-{category.Key}-{language}");
+                await Click("health-detail-close");
+                await Task.Delay(220);
+            }
+
+            var summary = new
+            {
+                passed = true,
+                scope = "Real current inventory; read-only Registry command inspection and File.Exists checks only. No uninstaller, cleanup, or remediation was launched.",
+                inventoryItems = _healthCheckedApps,
+                status = _healthReport.Status.ToString(),
+                confirmedFindings = _healthReport.ConfirmedFindings,
+                potentialFindings = _healthReport.PotentialFindings,
+                unsupportedChecks = _healthReport.UnsupportedChecks,
+                cancelledUiButtonStatus = cancelStatus,
+                previousScanReview,
+                languageSwitchPreservedScan = true,
+                realFindingCount,
+                checks = _healthReport.Checks.Select(c => new { c.Key, status = c.Status.ToString(), c.ScannedItems, c.ConfirmedFindings, c.PotentialFindings, c.ErrorCount, c.DurationMilliseconds, c.Diagnostics }).ToArray(),
+                findings = _healthReport.Checks.SelectMany(c => c.Findings).Select(f => new { f.Id, f.Category, f.Title, f.ApplicationId, f.ApplicationName, f.Source, f.Evidence, confidence = f.Confidence.ToString(), f.Explanation, f.Recommendation, risk = f.Risk.ToString() }).ToArray(),
+            screenshotCount = checks.Count,
+            screenshots = checks,
+                requestedWindowSizes = new[] { new[] { 1920, 1080 }, new[] { 1366, 768 }, new[] { 1280, 800 } },
+                languages = new[] { "en", "ar" },
+                uninstallersLaunched = 0
+            };
+            File.WriteAllText(Path.Combine(root, "functional-smoke.json"), JsonSerializer.Serialize(summary, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex)
+        {
+            File.WriteAllText(Path.Combine(root, "functional-smoke.json"), JsonSerializer.Serialize(new { passed = false, error = ex.ToString(), cancelStatus, screenshots = checks }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        finally
+        {
+            _main.LanguageCode = originalLanguage;
+            _workspacePage = null;
+            _main.NavigateTo("AllApps");
+            ScheduleState();
+        }
+
+        async Task Click(string testId)
+        {
+            var result = await Browser.CoreWebView2.ExecuteScriptAsync($"(() => {{ const e=document.querySelector('[data-testid={JsonSerializer.Serialize(testId)}]'); if(!e || e.disabled) return false; e.click(); return true; }})()");
+            if (result != "true") throw new InvalidOperationException("Required visible health control not found: " + testId);
+        }
+        async Task WaitForUi(string language)
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                var ready = await Browser.CoreWebView2.ExecuteScriptAsync($"document.documentElement.lang === '{language}' && document.querySelector('.app-shell')?.dataset.page === 'health' && !document.querySelector('.settings-modal')");
+                if (ready == "true") return;
+                await Task.Delay(75);
+            }
+            throw new TimeoutException("Software Health did not render in " + language + ".");
+        }
+        async Task WaitUntil(Func<Task<bool>> condition)
+        {
+            for (var i = 0; i < 200; i++) { if (await condition()) return; await Task.Delay(10); }
+            throw new TimeoutException("Software Health UI did not reach the expected state.");
+        }
+        async Task<string> ReadHealthSignature()
+        {
+            var encoded = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({cards:[...document.querySelectorAll('[data-health-category]')].map(x=>[x.dataset.healthCategory,[...x.classList].find(c=>c.startsWith('health-card-')&&c!=='health-card')]),metrics:[...document.querySelectorAll('.health-metric strong')].map(x=>x.textContent)})");
+            return JsonSerializer.Deserialize<string>(encoded) ?? "";
+        }
+        async Task Capture(string name)
+        {
+            using var stream = File.Create(Path.Combine(images, name + ".png"));
+            await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+            var encoded = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({page:document.querySelector('.app-shell')?.dataset.page,language:document.documentElement.lang,direction:document.documentElement.dir,viewport:[innerWidth,innerHeight],sidebarLeft:document.querySelector('.sidebar')?.getBoundingClientRect().left,sidebarRight:document.querySelector('.sidebar')?.getBoundingClientRect().right,errors:window.__winUninstallerDiagnostics?.errors||[]})");
+            var layout = JsonSerializer.Deserialize<string>(encoded) ?? "{}";
+            using var doc = JsonDocument.Parse(layout);
+            var data = doc.RootElement;
+            var language = name.Contains("-ar", StringComparison.Ordinal) ? "ar" : "en";
+            if (data.GetProperty("page").GetString() != "health" || data.GetProperty("language").GetString() != language ||
+                data.GetProperty("direction").GetString() != (language == "ar" ? "rtl" : "ltr") || data.GetProperty("errors").GetArrayLength() != 0)
+                throw new InvalidOperationException("Software Health screenshot had a page, language, direction, or browser error mismatch: " + name);
+            var viewportWidth = data.GetProperty("viewport")[0].GetDouble();
+            var sidebarLeft = data.GetProperty("sidebarLeft").GetDouble();
+            var sidebarRight = data.GetProperty("sidebarRight").GetDouble();
+            if (language == "ar" ? Math.Abs(sidebarRight - viewportWidth) > 3 : Math.Abs(sidebarLeft) > 3)
+                throw new InvalidOperationException("Sidebar did not match the active UI direction: " + name);
+            checks.Add(new { name, layout });
+        }
+    }
+}

@@ -1,0 +1,79 @@
+/* Shared timing keeps navigation, dialogs and feedback visually consistent. */
+:root {
+  --motion-fast: 140ms;
+  --motion-enter: 220ms;
+  --motion-ease: cubic-bezier(.2,.8,.2,1);
+}
+
+.nav-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--motion-enter) var(--motion-ease),
+    opacity 180ms ease;
+}
+.nav-disclosure[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+.nav-disclosure-content { min-height: 0; overflow: hidden; }
+.nav-disclosure[aria-hidden="true"] { pointer-events: none; }
+.nav-chevron { flex-shrink: 0; transition: transform var(--motion-enter) var(--motion-ease); }
+.nav-chevron.collapsed { transform: rotate(-90deg); }
+.rtl .nav-chevron.collapsed { transform: rotate(90deg); }
+
+.nav-sub-item, .nav-group-header, .nav-item-root, .sort-button {
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.nav-sub-item:active, .nav-group-header:active, .nav-item-root:active { background: var(--accent-soft); }
+:is(button, a, input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.button, .icon-action-button { transition-timing-function: var(--motion-ease); }
+.button.primary:hover:not(:disabled) { box-shadow: 0 4px 14px #00df811a; }
+.button:disabled { box-shadow: none; transform: none; }
+.app-name-meta strong { transition: color var(--motion-fast) ease; }
+
+.modal-backdrop { animation: u77-overlay-enter 180ms ease both; }
+.modal { animation: u77-dialog-enter var(--motion-enter) var(--motion-ease) both; }
+.extension-detail-drawer { animation: u77-drawer-enter var(--motion-enter) var(--motion-ease) both; }
+.rtl .extension-detail-drawer { animation-name: u77-drawer-enter-rtl; }
+.toast { animation: u77-toast-enter var(--motion-enter) var(--motion-ease) both; }
+.inventory-orbit img { animation: u77-loading-breathe 1800ms ease-in-out infinite; }
+.progress-track.finished > span::after { animation: none; opacity: 0; }
+.status-blue .progress-track > span { background: #5aa7e7; }
+.status-blue .modal-title-icon { background: #5aa7e712; border-color: #5aa7e738; color: #86bdf0; }
+
+@keyframes u77-overlay-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes u77-dialog-enter {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes u77-drawer-enter {
+  from { opacity: .5; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes u77-drawer-enter-rtl {
+  from { opacity: .5; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes u77-toast-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes u77-loading-breathe {
+  0%, 100% { opacity: .8; transform: scale(.97); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

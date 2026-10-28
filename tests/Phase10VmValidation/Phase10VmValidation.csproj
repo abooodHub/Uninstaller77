@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><ApplicationIcon>..\..\app\WinUninstaller\Resources\Brand\Uninstaller77.ico</ApplicationIcon></PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\app\WinUninstaller\WinUninstaller.csproj" /></ItemGroup>
+</Project>

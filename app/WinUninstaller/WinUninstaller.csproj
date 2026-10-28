@@ -1,0 +1,103 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+
+    <DefaultItemExcludes>$(DefaultItemExcludes);WebUI\node_modules\**;WebUI\dist\**;WebUI\reports\**;app\**</DefaultItemExcludes>
+
+    <OutputType>WinExe</OutputType>
+
+    <TargetFramework>net8.0-windows</TargetFramework>
+
+    <Nullable>enable</Nullable>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <UseWPF>true</UseWPF>
+
+    <RootNamespace>WinUninstaller</RootNamespace>
+
+    <AssemblyName>Uninstaller77</AssemblyName>
+
+    <Product>Uninstaller 77</Product>
+
+    <Title>Uninstaller 77</Title>
+
+    <Description>Uninstaller 77 — Windows application management</Description>
+
+    <ApplicationIcon>Resources\Brand\Uninstaller77.ico</ApplicationIcon>
+
+    <Version>1.0.0</Version>
+
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <InformationalVersion>1.0.0</InformationalVersion>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+
+    <Resource Include="Resources\Brand\Uninstaller77.ico" />
+
+    <Compile Remove="Phase6Fixture\**\*.cs" />
+    <!-- Keep generated build output out of WPF temporary-project globs. -->
+    <Compile Remove="**\obj\**\*.cs" />
+    <Compile Remove="**\bin\**\*.cs" />
+
+    <None Remove="Phase6Fixture\**\*" />
+
+    <Content Include="Resources\Strings.*.json" CopyToOutputDirectory="PreserveNewest" />
+
+    <Content Include="..\..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\licenses\*.txt" Link="Licenses\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+
+    <!-- Override the legacy native bundle; 2.x ships an affected SQLite build. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+
+  </ItemGroup>
+
+  <!-- Build the offline React bundle as part of Release. -->
+
+  <Target Name="BuildLocalWebUi" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectName)' == 'WinUninstaller' and '$(SkipLocalWebUiBuild)' != 'true' and Exists('$(MSBuildProjectDirectory)\WebUI\package.json')">
+
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\WebUI" Command="npm ci --offline" Condition="!Exists('$(MSBuildProjectDirectory)\WebUI\node_modules\.bin\vite.cmd') or !Exists('$(MSBuildProjectDirectory)\WebUI\node_modules\.bin\tsc.cmd')" />
+
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\WebUI" Command="npm run build" />
+
+  </Target>
+
+  <Target Name="CopyLocalWebUiToOutput" AfterTargets="Build" Condition="'$(MSBuildProjectName)' == 'WinUninstaller' and Exists('$(MSBuildProjectDirectory)\WebUI\dist\index.html')">
+
+    <ItemGroup>
+
+      <WebUiFiles Include="$(MSBuildProjectDirectory)\WebUI\dist\**\*" />
+      <PreviousGeneratedWebUiFiles Include="$(TargetDir)wwwroot\**\*" />
+
+    </ItemGroup>
+
+    <!-- Replace only generated web files to avoid retaining old hashed bundles. -->
+    <Delete Files="@(PreviousGeneratedWebUiFiles)" />
+    <Copy SourceFiles="@(WebUiFiles)" DestinationFiles="@(WebUiFiles->'$(TargetDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+
+  </Target>
+
+  <Target Name="IncludeLocalWebUiInPublish" AfterTargets="ComputeFilesToPublish" Condition="Exists('$(MSBuildProjectDirectory)\WebUI\dist\index.html')">
+    <ItemGroup>
+      <WebUiPublishFiles Include="$(MSBuildProjectDirectory)\WebUI\dist\**\*" />
+      <ResolvedFileToPublish Include="@(WebUiPublishFiles)">
+        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+</Project>
+

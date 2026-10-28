@@ -1,0 +1,104 @@
+/* Product identity and engine-backed queue surfaces. */
+.brand-mark { padding:0; overflow:hidden; border:0; background:transparent; }
+.brand-mark img { width:40px; height:40px; }
+.header-actions { flex-shrink:0; }
+.classification-unavailable { padding:9px 12px; font-size:11px; line-height:1.6; color:var(--text-3); }
+.text-unresolved { color:#e9b45d; }
+.queue-review-evidence { margin:0 24px 18px; padding:14px; border:1px solid #e9b45d30; border-radius:8px; font-size:12px; overflow-wrap:anywhere; }
+.queue-review-evidence h3 { margin:0 0 9px; font-size:14px; }
+.queue-review-evidence dl { display:grid; grid-template-columns:minmax(90px,.7fr) minmax(0,1fr); gap:8px; }
+.queue-review-evidence dd { margin:0; }
+.queue-review-evidence article { border-top:1px solid #ffffff12; padding:12px 0; line-height:1.8; }
+.queue-review-evidence code { display:block; white-space:normal; overflow-wrap:anywhere; color:var(--text-3); }
+.queue-review-evidence pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:10px; }
+.review-consent { display:flex; align-items:center; gap:9px; padding:10px 24px; flex-shrink:0; font-size:11px; line-height:1.6; background:#e9b45d08; }
+.phase10-progress .modal-actions { flex-wrap:wrap; }
+.inventory-loading { flex:1; min-height:280px; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:24px; gap:12px; }
+.inventory-loading h2 { font-size:19px; margin:8px 0 0; color:var(--text-1); }
+.inventory-loading p { margin:0; color:var(--accent); }
+.inventory-loading small { color:var(--text-3); max-width:360px; line-height:1.8; }
+.inventory-orbit { width:94px; height:94px; position:relative; display:grid; place-items:center; }
+.inventory-orbit img { width:54px; height:54px; border-radius:15px; }
+.inventory-orbit span { position:absolute; inset:0; border:3px solid #00df8122; border-top-color:#00df81; border-right-color:#00df8177; border-radius:50%; animation:spin 1.1s linear infinite; }
+.inventory-refresh,.inventory-error { display:flex; align-items:center; gap:10px; padding:12px 18px; color:var(--accent); background:#00df810b; border-bottom:1px solid #00df8122; }
+.inventory-refresh span { margin-inline-start:auto; color:var(--text-3); }
+.inventory-error { color:#ff727b; }
+.inventory-error p { font-size:12px; margin:4px 0; overflow-wrap:anywhere; }
+.inventory-error button { margin-inline-start:auto; flex-shrink:0; }
+.premium-confirm { width:min(740px,calc(100vw - 48px)); padding:0; display:flex; flex-direction:column; max-height:calc(100vh - 64px); overflow:hidden; }
+.premium-confirm .modal-header,.phase10-progress .modal-header { padding:22px 24px; margin:0; border-bottom:1px solid #ffffff0d; }
+.premium-confirm .modal-header h2 { font-size:19px; }
+.confirmation-summary { padding:16px 24px 12px; display:flex; align-items:center; gap:10px; color:var(--text-2); font-size:13px; }
+.confirmation-summary>span { background:#00df811a; color:var(--accent); padding:3px 10px; border-radius:7px; font-weight:700; }
+.confirmation-apps { min-height:0; overflow:auto; padding:0 24px 8px; display:flex; flex-direction:column; gap:9px; }
+.confirmation-card { display:flex; align-items:flex-start; gap:14px; padding:16px; border:1px solid #ffffff12; background:#ffffff03; border-radius:10px; transition:background .18s,border-color .18s; }
+.confirmation-card:hover { border-color:#00df8140; background:#00df8106; }
+.confirmation-identity { display:flex; flex-direction:column; min-width:0; flex:1; gap:6px; }
+.confirmation-identity>strong { font-size:15px; color:var(--text-1); line-height:1.5; overflow-wrap:anywhere; }
+.confirmation-identity>span { font-size:12px; color:var(--text-2); }
+.confirmation-identity small { font-size:11px; color:var(--text-3); line-height:1.6; }
+.confirmation-identity summary { color:var(--text-3); font-size:11px; cursor:pointer; padding-top:3px; }
+.confirmation-identity code { display:block; font-size:10px; color:var(--text-2); overflow-wrap:anywhere; white-space:normal; text-align:start; padding-top:8px; }
+.confirmation-size { font-size:12px; color:var(--text-2); white-space:nowrap; padding-top:4px; }
+.windows-change-note { margin:12px 24px 18px; display:flex; gap:10px; align-items:center; padding:12px 14px; border-radius:8px; border:1px solid #e9b45d22; background:#e9b45d08; color:#d9b87f; font-size:12px; line-height:1.7; }
+.windows-change-note svg { flex-shrink:0; }
+.windows-change-note p { margin:0; }
+.premium-confirm .option-row { margin:6px 24px; }
+.premium-confirm .modal-actions,.phase10-progress .modal-actions { border-top:1px solid #ffffff0d; padding:16px 24px; margin:0; background:#0000000f; flex-shrink:0; }
+.phase10-progress { width:min(760px,calc(100vw - 48px)); padding:0; overflow:hidden; max-height:calc(100vh - 40px); }
+.phase10-progress .modal-header { flex-shrink:0; }
+.phase10-progress .progress-body { flex:1; min-height:0; overflow:auto; }
+.phase10-progress .operation-app { margin:0 24px 18px; padding:16px; border:1px solid #ffffff10; border-radius:10px; background:#ffffff03; }
+.phase10-progress .operation-app>div { min-width:0; }
+.phase10-progress .operation-app strong { font-size:17px; overflow-wrap:anywhere; }
+.phase10-progress .operation-app span { line-height:1.6; }
+.queue-position { display:flex; justify-content:space-between; gap:12px; margin:18px 24px 12px; font-size:12px; color:var(--text-3); }
+.queue-position bdi { font-variant-numeric:tabular-nums; color:var(--text-2); margin-inline:4px; }
+.phase10-progress .progress-body>.progress-track,.phase10-progress .progress-body>.progress-caption { margin-inline:24px; }
+.phase10-progress .progress-body>.progress-track.indeterminate { height:3px; margin-bottom:14px; }
+.phase10-progress .progress-caption { display:flex; justify-content:space-between; gap:16px; margin-top:14px; font-size:12px; }
+.phase10-progress .batch-counters.overview { grid-template-columns:repeat(3,minmax(0,1fr)); margin:18px 24px; gap:8px; }
+.phase10-progress .metric { padding:11px 13px; border:1px solid #ffffff08; background:#ffffff03; border-radius:8px; }
+.phase10-progress .metric span { font-size:11px; }
+.phase10-progress .metric strong { font-size:21px; }
+.queue-attention { display:flex; align-items:center; gap:10px; margin:0 24px 16px; padding:12px 14px; background:#e9b45d0c; border:1px solid #e9b45d30; border-radius:8px; color:#e9b45d; font-size:13px; line-height:1.8; }
+.queue-attention svg { flex-shrink:0; }
+.queue-results { margin:0 24px 14px; border:1px solid #ffffff10; border-radius:10px; max-height:190px; overflow:auto; }
+.queue-result { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid #ffffff08; }
+.queue-result:last-child { border:0; }
+.queue-result>div { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.queue-result strong { font-size:12px; overflow-wrap:anywhere; }
+.queue-result small { font-size:11px; color:var(--text-3); }
+.queue-result>svg { color:var(--text-3); flex-shrink:0; }
+.queue-result.result-completed>svg { color:#00df81; }
+.queue-result.result-failed>svg { color:#ff727b; }
+.queue-result.result-needsuserattention>svg { color:#e9b45d; }
+.queue-log { margin:0 24px 16px; color:var(--text-3); font-size:12px; }
+.queue-log summary { cursor:pointer; padding:8px 0; }
+.queue-log .event-log { max-height:150px; margin:0; }
+.status-gray { --status-color:#939da8; }
+.status-gray .progress-track>span { background:#939da8; }
+.stop-queue { transition:background .18s,border-color .18s,color .18s; }
+.stop-queue:disabled { opacity:1; background:#e9b45d14; border-color:#e9b45d45; color:#e9b45d; }
+@media(max-height:760px) {
+ .premium-confirm,.phase10-progress { max-height:calc(100vh - 28px); }
+ .phase10-progress .modal-header,.premium-confirm .modal-header { padding:14px 20px; }
+ .phase10-progress .batch-counters.overview { grid-template-columns:repeat(6,minmax(0,1fr)); margin-block:12px; }
+ .phase10-progress .metric { padding:8px; }
+ .phase10-progress .metric span { font-size:10px; }
+ .queue-results { max-height:140px; }
+ .phase10-progress .operation-app { margin-bottom:12px; padding:12px; }
+}
+@media(prefers-reduced-motion:reduce) { .inventory-orbit span { animation:none; border-color:#00df81; } }
+.reduce-motion .inventory-orbit span { animation:none; border-color:#00df81; }
+
+.icon-state-badge.neutral { background:#66717d; color:#fff; }
+
+.bulk-bar.bulk-bar-top { flex-shrink:0; border-top:0; border-bottom:1px solid #2b2d34; min-height:46px; padding-block:7px; background:#1b1d22; }
+.bulk-bar-top .bulk-bar-count bdi { display:inline-block; unicode-bidi:isolate; }
+.queue-error-details { margin:0 24px 14px; padding:12px 14px; background:#ffb45408; border:1px solid #e9b45d28; border-radius:8px; font-size:12px; line-height:1.7; }
+.queue-error-details strong { display:block; margin-bottom:4px; color:#e9b45d; }
+.queue-error-details p { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; color:var(--text-2); }
+.queue-error-details code { display:block; margin-top:6px; color:var(--text-3); direction:ltr; text-align:start; font-size:11px; }
+
+/* Phase 12 evidence dashboard */
