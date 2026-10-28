@@ -466,6 +466,10 @@ public partial class WebMainWindow : Window
             case "clearHistory": RequireOnly(p); _history.ClearAllHistory(); break;
             case "openSettings": RequireOnly(p); _main.OpenSettings(); break;
             case "closeSettings": RequireOnly(p); _main.CloseSettings(); break;
+            case "openProductWebsite":
+                RequireOnly(p);
+                LaunchControlTarget(ProductWebsite.CreateLaunchInfo());
+                break;
             default: throw new InvalidDataException("Operation is not authorized.");
         }
     }

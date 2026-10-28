@@ -1248,6 +1248,7 @@ function SettingsDialog({ state, lang, run }: { state: State; lang: any; run: (o
           </div>
         </div>
         <div className="modal-actions">
+          <button className="button quiet" onClick={() => void run('openProductWebsite')}><ExternalLink size={14} />{lang.productWebsite}</button>
           <button className="button primary" onClick={() => void run('closeSettings')}>{lang.close}</button>
         </div>
       </div>

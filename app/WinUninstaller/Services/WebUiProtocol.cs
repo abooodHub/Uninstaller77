@@ -17,7 +17,7 @@ public static class WebUiProtocol
         "closeProgress", "stopBatch", "runBatch", "selectResidual", "selectAllResiduals",
         "deselectAllResiduals", "skipResiduals", "cleanResiduals", "restoreQuarantine",
         "setLanguage", "loadHistory", "setShowTestRecords",
-        "openHistoryDetails", "closeHistoryDetails", "clearHistory", "openSettings", "closeSettings",
+        "openHistoryDetails", "closeHistoryDetails", "clearHistory", "openSettings", "closeSettings", "openProductWebsite",
         "scanExtensions", "exportApps",
         "refreshControlCenter", "openControlFolder", "openWindowsAppsSettings", "exportSupportReport",
         "retryQueueVerification", "reviewQueue", "openQueueReview", "acknowledgeQueueReview", "inventoryRendered", "performanceMark"
@@ -68,6 +68,11 @@ public static class WebUiProtocol
             if (id.Length is < 1 or > 64 || operation.Length > 40 || !Operations.Contains(operation))
             {
                 error = "Request id or operation is not authorized.";
+                return false;
+            }
+            if (operation == "openProductWebsite" && payload.EnumerateObject().Any())
+            {
+                error = "The product website action does not accept parameters.";
                 return false;
             }
             request = new WebUiRequest(id, operation, payload.Clone());

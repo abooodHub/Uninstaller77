@@ -18,6 +18,14 @@ Check(typeof(WinUninstaller.ViewModels.AppListViewModel).GetMethod("ToggleView")
 foreach (var operation in new[] { "toggleView", "manageExtensionInBrowser", "setReduceMotion", "scanHealth", "scanMonitor", "shredPath", "forceUninstall" })
     Check(!WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "integrity", op = operation, payload = new { } }), out _, out _), "Shipping bridge denies " + operation);
 
+Check(WebUiProtocol.TryParse("{\"id\":\"website\",\"op\":\"openProductWebsite\",\"payload\":{}}", out _, out _), "Product website action accepts an empty payload");
+foreach (var payload in new[] { "{\"url\":\"https://example.invalid\"}", "{\"path\":\"C:\\\\Windows\\\\notepad.exe\"}", "{\"arguments\":\"--uninstall\"}", "{\"url\":\"\",\"url\":\"\"}" })
+    Check(!WebUiProtocol.TryParse("{\"id\":\"website\",\"op\":\"openProductWebsite\",\"payload\":" + payload + "}", out _, out _), "Product website refuses supplied destinations and parameters: " + payload);
+var websiteLaunch = ProductWebsite.CreateLaunchInfo();
+Check(websiteLaunch.FileName == "https://abooodhub.github.io/Uninstaller77/" && websiteLaunch.UseShellExecute && websiteLaunch.Arguments.Length == 0 && websiteLaunch.ArgumentList.Count == 0 && websiteLaunch.Verb.Length == 0,
+    "Product website launch uses only the fixed HTTPS page in the default browser without arguments or elevation");
+Check(!WebUiProtocol.IsTrustedSource(ProductWebsite.Address), "Public website is not trusted to send desktop bridge commands");
+
 var root = Path.Combine(Path.GetTempPath(), "Uninstaller77_ProductIntegrity_" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var dbPath = Path.Combine(root, "fixture.db");

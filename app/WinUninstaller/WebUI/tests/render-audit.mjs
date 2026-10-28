@@ -95,6 +95,12 @@ try {
       assert.doesNotMatch(html, /type="checkbox"|Reduce motion|تقليل الحركة|ضبط تفضيلات العرض/)
       assert.match(html, /English/); assert.match(html, /العربية/)
     })
+    check(language + ': settings offer the translated product website action', () => {
+      const html = render(ui.SettingsDialog, { state: { language }, lang, run })
+      assert.ok(html.includes(lang.productWebsite))
+      assert.match(html, /<button[^>]*class="button quiet"/)
+      assert.doesNotMatch(html, /https?:\/\/example|target="_self"/)
+    })
     check(language + ': support section is removed and working management tools remain', () => {
       const html = render(ui.ControlPage, { lang, run, page: { runtime: { appVersion: '1.1.10' }, sources: [{ source: 'HKCU 64-bit', accepted: 2, errors: 0, sourceErrors: 0, elapsedMs: 1, status: 'Completed' }] }, inventory: {}, scope: { title: '', search: '', count: 0, ready: false } })
       assert.equal((html.match(/class="control-tool"/g) || []).length, 6)

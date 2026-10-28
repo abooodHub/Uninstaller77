@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-10-28
+
+- Add a translated Product website button in Settings, opening the fixed HTTPS product page in the default browser.
+- Reject website action payloads containing custom URLs, paths or arguments.
+- Expand the bilingual website with eight contextualized original captures, category filters, keyboard-accessible full-image viewing and README previews.
+- Keep previous development screenshots explicitly identified; current browser inventory remains read-only.
+
 ## 1.0.0 — 2026-10-28
 
 - Windows x64 application inventory for Registry programs and current-user MSIX/AppX packages.
