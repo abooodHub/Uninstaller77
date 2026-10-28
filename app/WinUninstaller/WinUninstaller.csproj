@@ -55,7 +55,7 @@
 
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
 
     <!-- Override the legacy native bundle; 2.x ships an affected SQLite build. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
