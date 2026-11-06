@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split focus management, application/browser icons, and virtual-list rendering out of the 1,300-line React entry point without changing bundle size or host behavior.
+- Add a typed 52-operation host allowlist and a cross-language audit that rejects drift between the C# WebView protocol, TypeScript contract, and static UI calls.
 - Add a pinned weekly/PR CodeQL workflow for C# and TypeScript plus dependency-review rejection for new High/Critical vulnerable dependencies.
 - Enable deterministic .NET builds and repository-wide analyzers, with explicit CI-enforced reliability rules for Win32 return values, cancellation propagation, and Unicode P/Invoke declarations.
 - Split the WebView bridge and AppList presentation/dialog responsibilities into focused partial files while preserving bindings, bridge operations, and engine behavior.

@@ -5,6 +5,7 @@ The Windows desktop-user regression run recorded on 2026-11-06 passed **194 engi
 | Other executed local checks | Passed | Failed |
 | --- | ---: | ---: |
 | React presentation | 42 | 0 |
+| C# / TypeScript host-operation contract | 1 | 0 |
 | Arabic / English component rendering (SSR) | 92 | 0 |
 | Product integrity and native SQLite | 39 | 0 |
 | Control Center protocol and reporting | 38 | 0 |
@@ -25,6 +26,8 @@ The isolated unsigned candidate at `_build/candidate-20261106` was freshly publi
 On 2026-11-06 the candidate was also reported to install and run successfully in a Windows VM. This is a user-observed smoke result, not a substitute for the scripted disposable-guest upgrade, uninstall, offline-runtime, UAC, and signed-publisher matrix below.
 
 The web candidate passed the Error Boundary and dialog-semantics render contracts. The production bundle passed the enforced budget at approximately 383 KB JavaScript (118 KB gzip), 103 KB CSS (20 KB gzip), and 138 KB startup gzip; virtualized rendering remains bounded through 10,000 rows.
+
+The host-operation audit compares all 52 entries in the C# `WebUiProtocol` allowlist with the typed TypeScript operation contract, rejects duplicates or one-sided additions, and scans static UI calls for unauthorized operation names. TypeScript compilation additionally prevents components from accepting arbitrary operation strings.
 
 ```powershell
 dotnet run --project tests/Engine.Tests/Engine.Tests.csproj -c Release -- --report-dir _build/engine-tests

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "budget": "node tests/bundle-budget.mjs",
-    "test": "node --test tests/presentation.test.ts ../../../tests/retired/WebUI/presentation.test.ts",
+    "test": "node tests/host-contract-audit.mjs && node --test tests/presentation.test.ts ../../../tests/retired/WebUI/presentation.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

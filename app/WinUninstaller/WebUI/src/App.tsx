@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 declare const __APP_VERSION__: string
 import {
   AppWindow, ArrowDownAZ, ArrowDownWideNarrow, ArrowUpDown, BadgeCheck,
-  Check, ChevronDown, CircleAlert, Globe2,
+  Check, ChevronDown, CircleAlert,
   Clock3, Download, ExternalLink, FileText, FolderOpen, History, Info,
   LoaderCircle, Package, Puzzle,
   RefreshCw, RotateCcw, Search, Settings, ShieldAlert, ShieldCheck, Sliders,
@@ -18,12 +18,14 @@ import './control-center.css'
 import './queue-progress.css'
 import './unregistered.css'
 import { words } from './ui-strings'
-import chromeIcon from './assets/browsers/chrome.png'
-import edgeIcon from './assets/browsers/edge.png'
-import braveIcon from './assets/browsers/brave.png'
 import productIcon from './assets/u77.png'
-import { unregisteredErrorText, localizeState, localizeText, queueProgress, inventoryCount, historyTimestamp, browserGroups, resolveExtensionBrowser, extensionIdentity, extensionPermissionImpact, virtualRange, markFirstAppearance, verifiedQueuePercent, reconcileSearch, historyOutcome, queueFailureInfo } from './presentation'
+import { unregisteredErrorText, localizeState, localizeText, queueProgress, inventoryCount, historyTimestamp, browserGroups, resolveExtensionBrowser, extensionIdentity, extensionPermissionImpact, verifiedQueuePercent, reconcileSearch, historyOutcome, queueFailureInfo } from './presentation'
 import type { AppItem, ExtensionItem, HistoryItem, State, RequestMessage } from './host-contract'
+import type { HostAction, HostOperation } from './host-operations'
+import { AppIcon } from './components/AppIcon'
+import { BrowserIcon } from './components/BrowserIcon'
+import { VirtualList } from './components/VirtualList'
+import { useFocusTrap } from './hooks/use-focus-trap'
 
 
 const defaultState: State = {
@@ -39,27 +41,6 @@ const defaultState: State = {
   extensionsPage: { loading: false, scanned: false, items: [] },
 }
 
-function useFocusTrap<T extends HTMLElement>(active: boolean) {
-  const ref = useRef<T>(null)
-  useLayoutEffect(() => {
-    if (!active || !ref.current) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const first = ref.current.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
-    ;(first || ref.current).focus()
-    return () => { if (previous?.isConnected) previous.focus() }
-  }, [active])
-  const onKeyDown = useCallback((event: ReactKeyboardEvent<T>) => {
-    if (!active || event.key !== 'Tab' || !ref.current) return
-    const focusable = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
-      .filter(item => item.getAttribute('aria-hidden') !== 'true')
-    if (!focusable.length) { event.preventDefault(); ref.current.focus(); return }
-    const first = focusable[0], last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-  }, [active])
-  return [ref, onKeyDown] as const
-}
-
 function useHost() {
   const [state, setState] = useState<State>(defaultState)
   const [hasHostState, setHasHostState] = useState(false)
@@ -70,7 +51,7 @@ function useHost() {
   const stateRef = useRef(state)
   const pending = useRef(new Map<string, (message: RequestMessage) => void>())
 
-  const send = useCallback((op: string, payload: Record<string, unknown> = {}) => new Promise<RequestMessage>((resolve, reject) => {
+  const send = useCallback((op: HostOperation, payload: Record<string, unknown> = {}) => new Promise<RequestMessage>((resolve, reject) => {
     if (op === 'openDetails' && typeof payload.appId === 'string') {
       sharedDetailsIdRef.current = payload.appId
       setSharedDetailsId(payload.appId)
@@ -138,7 +119,7 @@ function useHost() {
     return () => webview.removeEventListener('message', receive)
   }, [send])
 
-  const act = useCallback(async (op: string, payload: Record<string, unknown> = {}) => {
+  const act = useCallback(async (op: HostOperation, payload: Record<string, unknown> = {}) => {
     try {
       if (stateRef.current.measurePerformance && (op === 'search' || op === 'sort'))
         void send('performanceMark', { action: op === 'search' ? 'Search' : 'Sort' })
@@ -158,101 +139,6 @@ function useHost() {
   }, [toast])
 
   return { state, setState, hasHostState, act, toast, setToast, toastIsError, setToastIsError, sharedDetailsId }
-}
-
-interface AppIconProps {
-  app: { name: string; icon?: string | null }
-  small?: boolean
-  variant?: 'list' | 'details' | 'progress' | 'small' | 'default'
-  selected?: boolean
-  isProcessing?: boolean
-  operationState?: string
-  sharedTransition?: boolean
-  className?: string
-  fallbackLabel?: string
-}
-
-function AppIcon({
-  app,
-  small = false,
-  variant = 'default',
-  selected = false,
-  isProcessing = false,
-  operationState,
-  sharedTransition = false,
-  className = '',
-  fallbackLabel = ''
-}: AppIconProps) {
-  const [failedSource, setFailedSource] = useState<string | null>(null)
-  const hasIcon = Boolean(app.icon && app.icon !== failedSource)
-  const effectiveVariant = small ? 'small' : variant
-  const verifiedIcon = operationState === 'Succeeded' || operationState === 'Completed'
-  const stateCls = operationState ? `state-${operationState.toLowerCase()}` : ''
-
-  return (
-    <span
-      className={`app-icon animated-icon-container variant-${effectiveVariant} ${selected ? 'is-selected' : ''} ${isProcessing ? 'is-processing' : ''} ${sharedTransition ? 'shared-icon-transition' : ''} ${stateCls} ${className}`}
-      data-variant={effectiveVariant}
-      data-selected={selected ? 'true' : 'false'}
-    >
-      {(effectiveVariant === 'progress' || isProcessing) && (
-        <svg className="icon-processing-ring" viewBox="0 0 48 48" aria-hidden="true">
-          <circle className="processing-track-bg" cx="24" cy="24" r="21" fill="none" strokeWidth="2.5" />
-          <circle
-            className={`processing-track-fg ${isProcessing ? 'spinning' : ''} ${stateCls}`}
-            cx="24"
-            cy="24"
-            r="21"
-            fill="none"
-            strokeWidth="2.5"
-            strokeDasharray="131.95"
-            strokeDashoffset={isProcessing ? '40' : '0'}
-          />
-        </svg>
-      )}
-      <span className="animated-icon-inner" data-icon-source={hasIcon ? 'application' : 'unavailable'}>
-        {hasIcon ? (
-          <img className="app-icon-img" src={app.icon!} alt="" loading={effectiveVariant === 'progress' || effectiveVariant === 'details' ? 'eager' : 'lazy'} onError={() => setFailedSource(app.icon || null)} />
-        ) : <span className="app-icon-fallback" title={fallbackLabel || undefined} role={fallbackLabel ? 'img' : undefined} aria-label={fallbackLabel || undefined}><Package aria-hidden="true" strokeWidth={1.5} /></span>}
-      </span>
-      {effectiveVariant === 'progress' && !isProcessing && operationState && (
-        <span className={`icon-state-badge ${verifiedIcon ? 'success' : operationState === 'Failed' ? 'failure' : 'neutral'}`}>
-          {verifiedIcon ? <Check size={11} strokeWidth={3} /> : <CircleAlert size={11} strokeWidth={3} />}
-        </span>
-      )}
-    </span>
-  )
-}
-
-function VirtualList({ items, render, rowHeight, className = '' }: { items: any[]; render: (item: any, index: number) => ReactNode; rowHeight: number; className?: string }) {
-  const host = useRef<HTMLDivElement>(null)
-  const entered = useMemo(() => new Set<string>(), [])
-  const [viewport, setViewport] = useState({ top: 0, height: 640 })
-  useEffect(() => {
-    if (!host.current) return
-    const observer = new ResizeObserver(entries => setViewport(v => ({ ...v, height: entries[0].contentRect.height })))
-    observer.observe(host.current)
-    return () => observer.disconnect()
-  }, [])
-  const { start, end, totalHeight } = virtualRange(items.length, viewport.top, viewport.height, rowHeight)
-  return (
-    <div className={`virtual-scroll ${className}`} ref={host} onScroll={e => { const top = e.currentTarget.scrollTop; setViewport(v => ({ ...v, top })) }}>
-      <div style={{ height: totalHeight, position: 'relative' }}>
-        {items.slice(start, end).map((item, i) => {
-          const index = start + i
-          const stableId = Array.isArray(item) ? item[0]?.id : item?.id ?? item?.name
-          const key = String(stableId ?? index)
-          return (
-            <div key={key} className="virtual-row" style={{ height: rowHeight, transform: `translateY(${index * rowHeight}px)` }}>
-              <div ref={node => { if (node && markFirstAppearance(key, entered)) node.classList.add('virtual-item-enter') }} style={{ '--stagger': Math.min(i, 8) } as React.CSSProperties}>
-                {render(item, index)}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
 }
 
 function App() {
@@ -355,7 +241,7 @@ function DesktopApp({ host }: { host: ReturnType<typeof useHost> }) {
     }))
   }, [p.hasConfirmedInventory, p.inventoryRevision, act])
 
-  const run = (opName: string, payload: Record<string, unknown> = {}) => act(opName, payload)
+  const run = (opName: HostOperation, payload: Record<string, unknown> = {}) => act(opName, payload)
   const navigate = (target: string) => { setQueueReview(null); void run('navigate', { target }) }
   const openExtensions = (browser?: string) => {
     setExtensionBrowser(browser ?? '')
@@ -603,7 +489,7 @@ function NavDisclosure({ id, open, children }: { id: string; open: boolean; chil
   </div>
 }
 
-function SortButton({ mode, current, label, icon, act }: { mode: string; current: string; label: string; icon: ReactNode; act: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+function SortButton({ mode, current, label, icon, act }: { mode: string; current: string; label: string; icon: ReactNode; act: HostAction }) {
   const selected = String(current || '')
   const active = selected === mode || (mode === 'NameAsc' && selected === 'NameDesc') || (mode === 'SizeDesc' && selected.startsWith('Size'))
   const next = mode === 'NameAsc' && selected === 'NameAsc' ? 'NameDesc' : mode === 'SizeDesc' && selected === 'SizeDesc' ? 'SizeAsc' : mode
@@ -614,7 +500,7 @@ function SortButton({ mode, current, label, icon, act }: { mode: string; current
   )
 }
 
-function AppRow({ app, lang, run, sharedDetailsId = '' }: { app: AppItem; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean>; sharedDetailsId?: string }) {
+function AppRow({ app, lang, run, sharedDetailsId = '' }: { app: AppItem; lang: any; run: HostAction; sharedDetailsId?: string }) {
   return (
     <div className={`app-row ${app.selected ? 'is-selected' : ''}`}>
       <input type="checkbox" aria-label={`${lang.selectAll}: ${app.name}`} checked={app.selected} onChange={e => void run('selectApp', { appId: app.id, selected: e.target.checked })} />
@@ -651,26 +537,8 @@ function SkeletonRows() {
 }
 
 // ---------------- BROWSER EXTENSIONS VIEW ----------------
-const browserIconFiles: Record<string, string> = {
-  'Google Chrome': chromeIcon, 'Microsoft Edge': edgeIcon, Brave: braveIcon
-}
-
-function BrowserIcon({ browser, className = '' }: { browser: string; className?: string }) {
-  const file = browserIconFiles[browser]
-  const brandCls = browser.toLowerCase().replace(/\s+/g, '-')
-  return (
-    <span className={`browser-icon-wrap brand-${brandCls} ${className}`}>
-      {file ? (
-        <img className="browser-icon" src={file} width="20" height="20" alt={browser} />
-      ) : (
-        <Globe2 className="browser-icon browser-icon-fallback" size={20} aria-hidden="true" />
-      )}
-    </span>
-  )
-}
-
 function ExtensionsPage({ page, lang, run, selectedBrowser, onSelectBrowser }: {
-  page: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean>
+  page: any; lang: any; run: HostAction
   selectedBrowser: string; onSelectBrowser: (browser: string) => void
 }) {
   const [profile, setProfile] = useState('All')
@@ -807,7 +675,7 @@ function PermissionSection({title,values,label}:{title:string;values:string[];la
 
 // ---------------- CONTROL CENTER VIEW ----------------
 function ControlPage({ lang, run, page, inventory, scope }: {
-  lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean>; page: any; inventory: any
+  lang: any; run: HostAction; page: any; inventory: any
   scope: { title: string; search: string; count: number; ready: boolean }
 }) {
   const text = lang.control
@@ -915,7 +783,7 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
   )
 }
 
-export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: HostAction }) {
   const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   const [stopPending, setStopPending] = useState(false)
   const [reviewRequest, setReviewRequest] = useState<string | null>(null)
@@ -1079,7 +947,7 @@ function UninstallConfirmation({ items, lang, close, execute, children }: {
   </div></div>
 }
 
-export function UnregisteredDialog({ review, lang, run }: { review: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+export function UnregisteredDialog({ review, lang, run }: { review: any; lang: any; run: HostAction }) {
   const [consent, setConsent] = useState(false)
   const [pending, setPending] = useState(false)
   const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
@@ -1088,7 +956,7 @@ export function UnregisteredDialog({ review, lang, run }: { review: any; lang: a
   const deleted = review.state === 'Deleted', restored = review.state === 'Restored', incomplete = review.state === 'DeleteIncomplete'
   const size = (bytes: number) => bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil((bytes || 0) / 1024)} KB`
   const errorText = unregisteredErrorText(String(review.error || ''), lang === words.ar ? 'ar' : 'en') || t.error
-  const action = async (op: string) => { setPending(true); try { await run(op, { planId: review.planId, acknowledged: consent, permanent: true }) } finally { setPending(false) } }
+  const action = async (op: HostOperation) => { setPending(true); try { await run(op, { planId: review.planId, acknowledged: consent, permanent: true }) } finally { setPending(false) } }
   return <div className="modal-backdrop high-layer" dir={lang === words.ar ? 'rtl' : 'ltr'}>
     <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal unregistered-modal" role="dialog" aria-modal="true" aria-label={t.title}>
       <ModalHeader title={t.title} icon={<Package />} closeLabel={lang.close} close={busy ? undefined : () => void run('closeUnregistered')} />
@@ -1139,7 +1007,7 @@ function ResidualScanSummary({ residual, lang }: { residual: any; lang: any }) {
   </details>
 }
 
-function ResidualDialog({ residual, op, lang, labels, run }: { residual: any; op: any; lang: any; labels: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+function ResidualDialog({ residual, op, lang, labels, run }: { residual: any; op: any; lang: any; labels: any; run: HostAction }) {
   const [confirmation, setConfirmation] = useState<{ version: number; count: number; size: string } | null>(null)
   const [pending, setPending] = useState(false)
   const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
@@ -1148,7 +1016,7 @@ function ResidualDialog({ residual, op, lang, labels, run }: { residual: any; op
   const eligible = items.filter((item: any) => item.canClean).length
   const selected = items.filter((item: any) => item.canClean && item.selected).length
   const reviewId = residual.reviewId
-  const act = async (action: string, payload = {}) => {
+  const act = async (action: HostOperation, payload = {}) => {
     setPending(true)
     try { return await run(action, { reviewId, ...payload }) }
     finally { setPending(false) }
@@ -1211,7 +1079,7 @@ function ResidualDialog({ residual, op, lang, labels, run }: { residual: any; op
   )
 }
 
-function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean>; onClear: () => void }) {
+function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: HostAction; onClear: () => void }) {
   const labels = page.labels || {}
   const [changingPage, setChangingPage] = useState(false)
   const [detailsRef, onDetailsKeyDown] = useFocusTrap<HTMLDivElement>(page.details?.outcome === 'QueueProtection')
@@ -1288,7 +1156,7 @@ function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: 
   )
 }
 
-function SettingsDialog({ state, lang, run }: { state: State; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+function SettingsDialog({ state, lang, run }: { state: State; lang: any; run: HostAction }) {
   const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   return (
     <div className="modal-backdrop">
