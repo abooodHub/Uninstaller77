@@ -8,6 +8,9 @@
 
     <TargetFramework>net10.0-windows</TargetFramework>
 
+    <!-- Keep clean CI restores and the win-x64 release publish on the same locked graph. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
     <Nullable>enable</Nullable>
 
     <ImplicitUsings>enable</ImplicitUsings>
