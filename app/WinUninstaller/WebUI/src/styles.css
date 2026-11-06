@@ -44,6 +44,8 @@
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; }
 body { background: var(--bg-app); color: var(--text-1); font-size: var(--text-base); overflow: hidden; }
+.desktop-startup { width: 100%; height: 100%; display: grid; place-items: center; }
+.desktop-startup img { width: 48px; height: 48px; }
 button, input { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

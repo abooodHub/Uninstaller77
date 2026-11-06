@@ -232,10 +232,10 @@ test('browser-only selection never invents an installed browser and keeps a dete
   assert.equal(groups[0].items.length, 0)
 })
 
-test('virtual list keeps the rendered window bounded for 150, 500, and 1000 rows', () => {
+test('virtual list keeps the rendered window bounded through 10,000 rows', () => {
   const rowHeight = 54
   const viewportHeight = 640
-  for (const count of [150, 500, 1000]) {
+  for (const count of [150, 500, 1000, 10_000]) {
     for (const top of [0, Math.floor(count * rowHeight / 2), count * rowHeight]) {
       const range = virtualRange(count, top, viewportHeight, rowHeight)
       assert.ok(range.start >= 0 && range.start <= range.end)

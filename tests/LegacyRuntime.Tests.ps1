@@ -2,13 +2,19 @@ param([string]$ReportDirectory = '', [string]$LegacyPayload = '')
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 if (!$ReportDirectory) { $ReportDirectory = Join-Path $workspace '_build\product-v1\LEGACY' }
-if (!$LegacyPayload) { $LegacyPayload = Join-Path $workspace 'dist\current\app' }
+$legacyFiles = 'WinUninstaller.exe','WinUninstaller.dll','WinUninstaller.deps.json','WinUninstaller.runtimeconfig.json'
+if (!$LegacyPayload) { throw 'Supply -LegacyPayload with the original extracted WinUninstaller runtime. This test checks historical file hashes.' }
+foreach ($name in $legacyFiles) {
+    if (!(Test-Path -LiteralPath (Join-Path $LegacyPayload $name) -PathType Leaf)) {
+        throw "The original legacy payload is incomplete: $name is missing."
+    }
+}
 $fixture = Join-Path $workspace ('_build\legacy-runtime-fixture-' + [Guid]::NewGuid().ToString('N'))
 $prefix = [IO.Path]::GetFullPath((Join-Path $workspace '_build')).TrimEnd('\') + '\'
 if (![IO.Path]::GetFullPath($fixture).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe fixture path.' }
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
-foreach($name in @('WinUninstaller.exe','WinUninstaller.dll','WinUninstaller.deps.json','WinUninstaller.runtimeconfig.json')) {
+foreach($name in $legacyFiles) {
     Copy-Item -LiteralPath (Join-Path $LegacyPayload $name) -Destination (Join-Path $fixture $name)
 }
 foreach($name in @('Uninstaller77.exe','user.sqlite','settings.json','Unrelated.exe')) {

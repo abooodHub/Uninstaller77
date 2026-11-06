@@ -237,7 +237,7 @@ public partial class TestRunnerService
         // Test 6: Deep Residual Scanner on Mock Files & Registry
         await RunTest("Residual quarantine and restore", results, logger, async () =>
         {
-            string testAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "TestFixtures", "WinUninstallerMockResidualApp_" + Guid.NewGuid().ToString("N"));
+            string testAppData = Path.Combine(Path.GetTempPath(), "WinUninstallerMockResidualApp_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(testAppData);
             File.WriteAllText(Path.Combine(testAppData, "config.ini"), "TestConfig=1");
 
@@ -260,7 +260,14 @@ public partial class TestRunnerService
             if (items.Any(i => i.IsSelected)) throw new Exception("Residuals were selected without user review.");
             items[0].IsSelected = true;
 
-            // Clean with registry backup
+            // A same-size replacement must invalidate the reviewed contents.
+            var fixtureConfig = Path.Combine(testAppData, "config.ini");
+            File.WriteAllText(fixtureConfig, "TestConfig=2");
+            var stale = await _residualScanner.CleanResidualsAsync(items, mockApp, backupRegistry: true);
+            if (stale.Success || stale.CleanedCount != 0 || File.ReadAllText(fixtureConfig) != "TestConfig=2")
+                throw new Exception("A directory changed after review was moved.");
+            items = (await _residualScanner.ScanResidualsAsync(mockApp)).Items.ToList();
+            items.Single(item => item.Path == testAppData).IsSelected = true;
             var cleanResult = await _residualScanner.CleanResidualsAsync(items, mockApp, backupRegistry: true);
 
             if (!cleanResult.Success)
@@ -289,7 +296,7 @@ public partial class TestRunnerService
             File.WriteAllText(exePath, "dummy binary");
 
             string cmd = $"\"{exePath}\" /معامل1 /silent";
-            var (exe, args) = UninstallService.SplitCommand(cmd);
+            var (exe, args) = RegisteredUninstallCommand.SplitCommand(cmd);
 
             try { Directory.Delete(arabicDir, true); } catch { }
 
@@ -374,9 +381,9 @@ public partial class TestRunnerService
 
         await RunTest("Elevation decision", results, logger, () =>
         {
-            if (!UninstallService.RequiresElevation(new InstalledApp { RegistryHive = "HKLM" }, @"C:\Fixture\remove.exe"))
+            if (!RegisteredUninstallCommand.RequiresElevation(new InstalledApp { RegistryHive = "HKLM" }, @"C:\Fixture\remove.exe"))
                 throw new Exception("HKLM uninstaller did not request elevation.");
-            if (UninstallService.RequiresElevation(new InstalledApp { RegistryHive = "HKCU" }, @"C:\Fixture\remove.exe"))
+            if (RegisteredUninstallCommand.RequiresElevation(new InstalledApp { RegistryHive = "HKCU" }, @"C:\Fixture\remove.exe"))
                 throw new Exception("HKCU fixture requested unexpected elevation.");
             return "Elevation policy recognizes HKLM and HKCU cases.";
         });
@@ -386,13 +393,25 @@ public partial class TestRunnerService
             var fixture = new InstalledApp
             {
                 Name = "Safety fixture", InstallLocation = Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                RegistryKeyPath = @"HKCU\Software\WinUninstaller_Test_" + Guid.NewGuid().ToString("N")
+                RegistryKeyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\WinUninstaller_Test_" + Guid.NewGuid().ToString("N")
             };
             if (ResidualScanService.IsEligibleInstallDirectory(fixture.InstallLocation, fixture))
                 throw new Exception("Windows directory was eligible for cleanup.");
             fixture.InstallLocation = Path.GetPathRoot(Environment.SystemDirectory)!;
             if (ResidualScanService.IsEligibleInstallDirectory(fixture.InstallLocation, fixture))
                 throw new Exception("Drive root was eligible for cleanup.");
+            foreach (var path in new[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller"),
+                AppContext.BaseDirectory
+            }.Where(Directory.Exists))
+            {
+                fixture.InstallLocation = path;
+                if (ResidualScanService.IsEligibleInstallDirectory(path, fixture))
+                    throw new Exception("Personal or product directory was eligible for cleanup: " + path);
+            }
             fixture.InstallLocation = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             var item = new ResidualItem { Type = ResidualType.Directory, Path = fixture.InstallLocation, IsSelected = true };
             var result = await _residualScanner.CleanResidualsAsync([item], fixture);
@@ -533,13 +552,18 @@ public partial class TestRunnerService
                 "{\"id\":\"x\",\"op\":\"runShell\",\"payload\":{}}",
                 "{\"id\":\"x\",\"op\":\"refresh\",\"payload\":{},\"command\":\"whoami\"}",
                 "{\"id\":\"x\",\"op\":\"search\",\"payload\":[]}",
+                "{\"id\":\"x\",\"op\":\"search\",\"payload\":{\"value\":\"first\",\"value\":\"second\"}}",
+                "{\"id\":\"line\\nfeed\",\"op\":\"refresh\",\"payload\":{}}",
                 "not-json"
             })
                 if (WebUiProtocol.TryParse(invalid, out _, out _))
                     throw new Exception("Malformed or unauthorized bridge request was accepted.");
             if (WebUiProtocol.TryParse(new string(' ', WebUiProtocol.MaxMessageBytes + 1), out _, out _))
                 throw new Exception("Oversized bridge request was accepted.");
-            return "Authorized JSON envelope accepted; unknown commands, unexpected fields, invalid payloads, malformed JSON, and oversized messages rejected.";
+            var many = string.Join(',', Enumerable.Range(0, WebUiProtocol.MaxJsonNodes).Select(index => $"\"p{index}\":0"));
+            if (WebUiProtocol.TryParse($"{{\"id\":\"x\",\"op\":\"refresh\",\"payload\":{{{many}}}}}", out _, out _))
+                throw new Exception("A bridge request exceeded the JSON node limit.");
+            return "Authorized JSON accepted; unknown commands, duplicate fields, control-bearing IDs, excessive nodes, malformed JSON, and oversized messages rejected.";
         });
 
         await RunTest("WebView2 source identity and destructive operation denylist", results, logger, () =>
@@ -548,16 +572,39 @@ public partial class TestRunnerService
                 WebUiProtocol.IsTrustedSource("https://example.com/index.html") ||
                 WebUiProtocol.IsTrustedSource("https://appassets.winuninstaller.evil/index.html") ||
                 WebUiProtocol.IsTrustedSource("https://appassets.winuninstaller/other.html") ||
+                WebUiProtocol.IsTrustedSource("https://appassets.winuninstaller/index.html?source=other") ||
+                WebUiProtocol.IsTrustedSource("https://appassets.winuninstaller/index.html#other") ||
                 WebUiProtocol.IsTrustedSource("http://appassets.winuninstaller/index.html"))
                 throw new Exception("Trusted source allowlist accepted an invalid origin or rejected its app page.");
 
-            foreach (var operation in new[] { "cleanHealthCategory", "removeExtension", "shredPath", "createRestorePoint" })
+            foreach (var operation in new[] { "cleanHealthCategory", "removeExtension", "shredPath" })
             {
                 var request = "{\"id\":\"blocked\",\"op\":\"" + operation + "\",\"payload\":{}}";
                 if (WebUiProtocol.TryParse(request, out _, out _))
                     throw new Exception($"Destructive or unverified operation '{operation}' was accepted.");
             }
-            return "Only the exact local HTTPS app page is trusted; health deletion, extension removal, shredding, and restore point commands are denied.";
+            return "Only the local HTTPS app entry point is trusted; cleanHealthCategory, removeExtension, and shredPath are denied.";
+        });
+
+        await RunTest("WebView2 allows opening the System Restore wizard but denies point creation and deletion", results, logger, () =>
+        {
+            static string Request(string operation, string payload) =>
+                $"{{\"id\":\"restore-fixture\",\"op\":\"{operation}\",\"payload\":{payload}}}";
+
+            if (!WebUiProtocol.TryParse(Request("openSystemRestore", "{}"), out var accepted, out _) ||
+                accepted?.Operation != "openSystemRestore")
+                throw new Exception("The post-queue button's empty request was rejected.");
+
+            foreach (var payload in new[] { "{\"path\":\"other.exe\"}", "{\"arguments\":\"/quiet\"}", "{\"sequenceNumber\":42}" })
+                if (WebUiProtocol.TryParse(Request("openSystemRestore", payload), out _, out _))
+                    throw new Exception("The System Restore wizard request accepted a parameter.");
+
+            foreach (var operation in new[] { "createRestorePoint", "deleteRestorePoint", "removeRestorePoint" })
+                foreach (var payload in new[] { "{}", "{\"description\":\"Owned fixture\",\"sequenceNumber\":42}" })
+                    if (WebUiProtocol.TryParse(Request(operation, payload), out _, out _))
+                        throw new Exception($"The bridge accepted the restore point operation '{operation}'.");
+
+            return "openSystemRestore accepts only an empty payload. createRestorePoint, deleteRestorePoint, and removeRestorePoint are denied. No Windows process was launched.";
         });
 
         await RunTest("Software health evidence checks", results, logger, () =>
@@ -698,6 +745,7 @@ public partial class TestRunnerService
         });
 
         await RunPhase10TestsAsync(results, logger);
+        await RunQueueProtectionTestsAsync(results, logger);
         await RunPhase11TestsAsync(results, logger);
         await RunPhase12TestsAsync(results, logger);
         await RunPhase13TestsAsync(results, logger);

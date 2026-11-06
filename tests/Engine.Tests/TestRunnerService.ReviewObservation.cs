@@ -1,4 +1,6 @@
 using Microsoft.Win32;
+using Microsoft.Data.Sqlite;
+using System.IO;
 using WinUninstaller.Models;
 
 namespace WinUninstaller.Services;
@@ -7,6 +9,60 @@ public partial class TestRunnerService
 {
     private async Task RunReviewObservationTestsAsync(List<TestResult> results, Action<string>? logger)
     {
+        await RunTest("Permanent residual deletion reports deleted, changed, inaccessible and retained files separately", results, logger, async () =>
+        {
+            var root = Path.Combine(Path.GetTempPath(), "Uninstaller77_PermanentDisposition_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            FileStream? lockedStream = null;
+            try
+            {
+                var delete = Write("delete.bin", "delete");
+                var changed = Write("changed.bin", "before");
+                var locked = Write("locked.bin", "locked");
+                var hardLink = Write("hard-link.bin", "linked");
+                var hardLinkAlias = Path.Combine(root, "hard-link-alias.bin");
+                if (!CreateHardLink(hardLinkAlias, hardLink, IntPtr.Zero))
+                    throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+
+                var items = new[]
+                {
+                    Review(delete, "delete"), Review(changed, "before"), Review(locked, "locked"),
+                    Review(hardLink, "linked"), new ResidualItem { Type = ResidualType.File, Path = Path.Combine(root, "unreviewed.bin"), CanClean = false }
+                };
+                File.WriteAllText(changed, "after!");
+                lockedStream = new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var deletedBytes = new FileInfo(delete).Length;
+                var id = "U77_PermanentDisposition_" + Guid.NewGuid().ToString("N");
+                var app = new InstalledApp { Id = id, Name = id, Source = "Fixture", InstallLocation = root,
+                    RegistryKeyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\" + id };
+
+                var result = await ResidualScanService.DeleteReviewedFilesAsync(app, [app], items);
+                var dispositions = result.Attempts.Select(attempt => attempt.Disposition).ToArray();
+                if (result.Deleted != 1 || result.Bytes != deletedBytes || File.Exists(delete) ||
+                    dispositions.Count(value => value == ResidualScanService.PermanentDisposition.Deleted) != 1 ||
+                    dispositions.Count(value => value == ResidualScanService.PermanentDisposition.Changed) != 2 ||
+                    dispositions.Count(value => value == ResidualScanService.PermanentDisposition.Inaccessible) != 1 ||
+                    dispositions.Count(value => value == ResidualScanService.PermanentDisposition.Retained) != 1 ||
+                    !File.Exists(changed) || !File.Exists(locked) || !File.Exists(hardLink))
+                    throw new Exception("Permanent deletion merged outcomes or changed a refused fixture.");
+                return "The pinned file was deleted; changed bytes and a multi-link file were classified as changed, a sharing violation as inaccessible, and unreviewed input as retained.";
+
+                string Write(string name, string content)
+                {
+                    var path = Path.Combine(root, name); File.WriteAllText(path, content); return path;
+                }
+                static ResidualItem Review(string path, string content) => new()
+                {
+                    Type = ResidualType.File, Path = path, SizeBytes = System.Text.Encoding.UTF8.GetByteCount(content), CanClean = true,
+                    ReviewedFingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)))
+                };
+            }
+            finally
+            {
+                lockedStream?.Dispose();
+                if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            }
+        });
         await RunTest("Retry accepts completed system MSI semantics without weakening EXE tracking", results, logger, () =>
         {
             foreach (var code in new int?[] { 0, 1605, 3010 })
@@ -142,10 +198,11 @@ public partial class TestRunnerService
                     await portable.RestoreUnregisteredAsync(receipt);
                     if (!portable.IsUnregisteredOpen || portable.UnregisteredState != "Restored" || !System.IO.File.Exists(target) || portable.UnregisteredIdentity?.Name != "OwnedApp")
                         throw new Exception("Control-center restore failed: " + portable.UnregisteredError);
+                    var historyPath = System.IO.Path.Combine(root, "noop-history.db");
+                    var noOpJournal = new QueueJournal(System.IO.Path.Combine(root, "NoOpQueue"));
                     var noOp = new WinUninstaller.ViewModels.AppListViewModel(new RegistryDiscoveryService(),
                         new IconCacheService(extractor, System.IO.Path.Combine(root, "NoOpIcons")),
-                        new DatabaseService(System.IO.Path.Combine(root, "noop-history.db")), new UninstallService(), new ResidualScanService(),
-                        new QueueJournal(System.IO.Path.Combine(root, "NoOpQueue")));
+                        new DatabaseService(historyPath), new UninstallService(), new ResidualScanService(), noOpJournal);
                     var ownedQueue = Enumerable.Range(1, 3).Select(i => new InstalledApp { Id = "OwnedNoOp_" + i, Name = "Owned no-op " + i, Source = "Fixture" }).ToList();
                     Func<InstalledApp, Task<UninstallService.UninstallResult>> completedNoOp = _ => Task.FromResult(
                         UninstallService.InterpretCompletedProcessResult(0, VerificationStatus.StillPresent, false));
@@ -178,8 +235,75 @@ public partial class TestRunnerService
                         skippedRecord.Success || skippedRecord.Outcome != "NotInstalled")
                         throw new Exception("Already-absent peer failed real ViewModel accounting, terminal journal state or honest history outcome.");
                     noOp.CloseProgress();
-                })).WaitAsync(TimeSpan.FromSeconds(15));
-                return "Live WPF dispatcher/ViewModel: review/stop/acknowledge, finite closable no-op results (1 failed, 2 skipped, no auto launch), plus owned permanent file deletion and legacy backup restore.";
+
+                    using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = historyPath }.ToString()))
+                    {
+                        connection.Open();
+                        using var cmd = connection.CreateCommand();
+                        cmd.CommandText = """
+                            CREATE TRIGGER RejectFixtureHistory BEFORE INSERT ON UninstallHistory
+                            BEGIN SELECT RAISE(ABORT, 'Owned fixture history write failure'); END;
+                            """;
+                        cmd.ExecuteNonQuery();
+                    }
+                    Func<InstalledApp, Task<UninstallService.UninstallResult>> verifiedSuccess = _ => Task.FromResult(
+                        UninstallService.InterpretCompletedProcessResult(0, VerificationStatus.VerifiedRemoved, false));
+                    var successfulFixture = selected.Take(1).ToList();
+                    await (Task)execute.Invoke(noOp, [successfulFixture, false, true, verifiedSuccess])!;
+                    var durable = noOpJournal.Read()!;
+                    var priorRecord = noOp.Database.GetHistory().First();
+                    if (noOp.BatchState != BatchQueueState.CriticalFailure || !noOp.CanAcknowledgeReview || noOp.BatchSuccessful != 1 ||
+                        noOp.LastInsertedRecordId != 0 || !durable.Active || durable.Items.Single().State != UninstallOperationState.Completed ||
+                        durable.Items.Single().ExitCode != 0 || durable.Reviews?.Last().Evidence.Contains("Owned fixture history write failure") != true ||
+                        priorRecord.Id != skippedRecord.Id || priorRecord.ResidualStatus != skippedRecord.ResidualStatus || priorRecord.Notes != skippedRecord.Notes)
+                        throw new Exception("History failure concealed a critical stop, lost verified evidence, or reused a prior history row.");
+                    noOp.AcknowledgeUnresolvedQueue(durable.QueueId);
+
+                    var keyName = "WinUninstaller_Test_Review_" + Guid.NewGuid().ToString("N");
+                    var registryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + keyName;
+                    var launch = $"\"{Environment.ProcessPath}\" --fixture-delay 4500";
+                    using (var key = Registry.CurrentUser.CreateSubKey(registryPath))
+                    {
+                        key.SetValue("DisplayName", "Owned live review fixture");
+                        key.SetValue("UninstallString", launch);
+                    }
+                    var delayedEngine = new UninstallService(TimeSpan.FromMilliseconds(100));
+                    var actual = RegistryDiscoveryService.ReadExactRegistration("HKCU\\" + registryPath)!;
+                    try
+                    {
+                        var pendingJournal = new QueueJournal(System.IO.Path.Combine(root, "LiveReview"));
+                        var liveReview = new WinUninstaller.ViewModels.AppListViewModel(new RegistryDiscoveryService(),
+                            new IconCacheService(extractor, System.IO.Path.Combine(root, "LiveReviewIcons")),
+                            new DatabaseService(System.IO.Path.Combine(root, "live-review.db")), delayedEngine, new ResidualScanService(), pendingJournal);
+                        var preview = new InstalledApp { Id = actual.Id, Name = actual.Name, Source = "Fixture" };
+                        Func<InstalledApp, Task<UninstallService.UninstallResult>> startFixture = _ => delayedEngine.UninstallAsync(actual);
+                        var running = (Task)execute.Invoke(liveReview, [new List<InstalledApp> { preview }, false, false, startFixture])!;
+                        for (var attempt = 0; attempt < 150 && !liveReview.NeedsQueueReview; attempt++) await Task.Delay(20);
+                        if (!liveReview.NeedsQueueReview || !UninstallService.HasPendingOperation)
+                            throw new Exception("The owned process did not enter review.");
+                        liveReview.MarkQueueForReview();
+                        await running.WaitAsync(TimeSpan.FromSeconds(3));
+                        var liveQueueId = liveReview.ReviewQueueId;
+                        try { liveReview.AcknowledgeUnresolvedQueue(liveQueueId); }
+                        catch (InvalidOperationException ex) when (ex.Message == UiStrings.Get(liveReview.LanguageCode, "queueReviewStillRunning")) { }
+                        if (!liveReview.CanAcknowledgeReview || !liveReview.HasPendingQueueReview || pendingJournal.Read()?.AcknowledgedUnresolvedAt is not null)
+                            throw new Exception("A still-active process could close its queue review.");
+                        await Task.Delay(4750);
+                        await liveReview.RetryQueueVerificationAsync();
+                        if (UninstallService.HasPendingOperation || !liveReview.HasPendingQueueReview || liveReview.BatchSuccessful != 0)
+                            throw new Exception("Stopped review failed to retire the completed process or invented a successful removal.");
+                        liveReview.AcknowledgeUnresolvedQueue(liveQueueId);
+                        if (liveReview.HasPendingQueueReview || pendingJournal.Read()?.AcknowledgedUnresolvedAt is null)
+                            throw new Exception("Completed review could not be acknowledged.");
+                    }
+                    finally
+                    {
+                        delayedEngine.TryReleaseCompletedReview(actual);
+                        Registry.CurrentUser.DeleteSubKey(registryPath, throwOnMissingSubKey: false);
+                    }
+                    await TestQueueResidualReviewAsync(root);
+                })).WaitAsync(TimeSpan.FromSeconds(40));
+                return "Live WPF dispatcher/ViewModel: preserved unresolved queue evidence and tested grouped residual review, stale confirmation rejection, and actual deletion of an unchanged selected fixture only.";
             }
             finally
             {
@@ -187,5 +311,86 @@ public partial class TestRunnerService
                 thread.Join(TimeSpan.FromSeconds(3));
             }
         });
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true, EntryPoint = "CreateHardLinkW")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(string fileName, string existingFileName, IntPtr securityAttributes);
+
+    private static async Task TestQueueResidualReviewAsync(string ownedRoot)
+    {
+        var root = System.IO.Path.Combine(ownedRoot, "GroupedResiduals");
+        var vm = new WinUninstaller.ViewModels.AppListViewModel(new RegistryDiscoveryService(),
+            new IconCacheService(new IconExtractionService(), System.IO.Path.Combine(root, "Icons")),
+            new DatabaseService(System.IO.Path.Combine(ownedRoot, "grouped-history.db")), new UninstallService(),
+            new ResidualScanService(), new QueueJournal(root)) { UseWebUi = true };
+        var first = Fixture("First");
+        var second = Fixture("Second");
+        var failed = Fixture("Failed");
+        var partial = Fixture("Partial");
+        var queue = new List<InstalledApp> { first, failed, second, partial };
+        var delete = Write(first, "delete.bin");
+        var keep = Write(first, "unchecked.bin");
+        var changed = Write(second, "changed.bin");
+        var failedPath = Write(failed, "failed.bin");
+        var partialPath = Write(partial, "partial.bin");
+
+        var invoked = 0;
+        Func<InstalledApp, Task<UninstallService.UninstallResult>> executor = app =>
+        {
+            if (vm.IsResidualOpen) throw new Exception("Residual review opened before the last attempt.");
+            invoked++;
+            return Task.FromResult(app == failed ? new UninstallService.UninstallResult(false, 20, VerificationStatus.StillPresent,
+                "Fixture refusal", "", "UninstallerExitError", true)
+                : UninstallService.InterpretCompletedProcessResult(0, app == partial ? VerificationStatus.PartiallyRemoved : VerificationStatus.VerifiedRemoved, false));
+        };
+        var execute = vm.GetType().GetMethod("RunQueueAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)execute.Invoke(vm, [queue, false, true, executor])!;
+        if (invoked != 4 || !vm.IsResidualOpen || !vm.ResidualReviewGroups.Select(group => group.App).SequenceEqual(new[] { first, second }) ||
+            vm.ResidualItems.Count(item => item.CanClean) != 3 || vm.ResidualItems.Any(item => item.IsSelected))
+            throw new Exception("Expected only verified removals in an unchecked, grouped review.");
+
+        var review = vm.ResidualReviewId!;
+        var initialVersion = vm.ResidualSelectionVersion;
+        vm.SelectAllResiduals();
+        vm.ResidualItems.Single(item => item.Path == keep).IsSelected = false;
+        Reject(review, initialVersion, true);
+        Reject("different-review", vm.ResidualSelectionVersion, true);
+        Reject(review, vm.ResidualSelectionVersion, false);
+        if (!File.Exists(delete)) throw new Exception("Files were deleted before valid confirmation.");
+        File.WriteAllText(changed, "after!");
+        await vm.DeleteQueueResidualsAsync(review, vm.ResidualSelectionVersion);
+        if (vm.IsResidualOpen || File.Exists(delete) || !File.Exists(keep) || !File.Exists(failedPath) ||
+            !File.Exists(partialPath) || File.ReadAllText(changed) != "after!")
+            throw new Exception("The selected unchanged file was not deleted, or a file outside the valid selection changed.");
+        var history = vm.Database.GetHistory();
+        if (history.Single(record => record.AppId == first.Id).CleanedItemsCount != 1 ||
+            history.Single(record => record.AppId == second.Id).CleanedItemsCount != 0 ||
+            history.Single(record => record.AppId == failed.Id).ResidualStatus != "ResidualScan:NotScanned")
+            throw new Exception("Residual deletion counts or scan status were attached to the wrong history row.");
+
+        InstalledApp Fixture(string name)
+        {
+            var id = "U77_Grouped_" + Guid.NewGuid().ToString("N");
+            return new InstalledApp { Id = id, Name = id, Source = "Fixture",
+                RegistryKeyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\" + id,
+                InstallLocation = System.IO.Path.Combine(root, name) };
+        }
+
+        static string Write(InstalledApp app, string name)
+        {
+            Directory.CreateDirectory(app.InstallLocation);
+            var path = System.IO.Path.Combine(app.InstallLocation, name);
+            File.WriteAllText(path, "before");
+            return path;
+        }
+
+        void Reject(string id, int version, bool confirmed)
+        {
+            try { vm.RequireCurrentResidualReview(id, version, confirmed); }
+            catch (InvalidDataException) { return; }
+            throw new Exception("An invalid residual confirmation was accepted.");
+        }
     }
 }

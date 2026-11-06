@@ -42,7 +42,14 @@ public sealed class MsixDeploymentService
         {
             using var document = JsonDocument.Parse(line[11..]);
             var root = document.RootElement;
-            string Read(string name) => root.TryGetProperty(name, out var value) ? value.ToString() : "";
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.Value.ValueKind != JsonValueKind.String || !fields.TryAdd(property.Name, property.Value.GetString()!))
+                    return null;
+            }
+            string Read(string name) => fields.GetValueOrDefault(name, "");
             if (Read("operationId") != operationId || Read("package") != package) return null;
             var state = Read("state");
             return state is "Removed" or "Failed" or "Protected" or "Absent" or "Present"
@@ -59,9 +66,13 @@ public sealed class MsixDeploymentService
         var details = string.Join("\n", new[] { receipt?.Error, receipt?.HResult, stderr, query.Error }.Where(value => !string.IsNullOrWhiteSpace(value)));
         if (query.Verification == VerificationStatus.Unknown)
             return new(false, exitCode, VerificationStatus.Unknown, "MSIX verification query failed.", details, query.FailureCode);
+        if (exitCode == 2 && receipt?.State == "Absent" && query.Verification == VerificationStatus.VerifiedRemoved)
+            return new(false, exitCode, query.Verification, "The package was already absent; no removal was performed.", details, "RegistrationAbsent");
         if (exitCode == 0 && receipt?.State == "Removed" && query.Verification == VerificationStatus.VerifiedRemoved)
             return new(true, exitCode, VerificationStatus.VerifiedRemoved, "MSIX package removal was verified.", "");
-        if (exitCode == 0 && receipt?.State == "Removed" && query.Verification != VerificationStatus.VerifiedRemoved)
+        if ((receipt?.State == "Removed" && (exitCode != 0 || query.Verification != VerificationStatus.VerifiedRemoved)) ||
+            (receipt?.State == "Absent" && query.Verification != VerificationStatus.VerifiedRemoved) ||
+            (receipt?.State is "Present" or "Protected" && query.Verification != VerificationStatus.StillPresent))
             return new(false, exitCode, VerificationStatus.Unknown, "MSIX deployment and verification did not agree.", details, "MsixVerificationMismatch");
         if (receipt is null)
             return new(false, exitCode, VerificationStatus.Unknown, "MSIX completion receipt was missing or invalid.", details, "MissingMsixReceipt");
@@ -88,7 +99,7 @@ public sealed class MsixDeploymentService
             try {
               $installed=@(Get-AppxPackage -ErrorAction Stop | Where-Object PackageFullName -EQ '{{app.Id}}')
               if ($installed.Count -eq 0) { Complete-U77 'Absent' '' '' 2 }
-              if ($installed[0].NonRemovable) { Complete-U77 'Protected' 'Windows marks this package NonRemovable.' '' 5 }
+              if ($installed[0].NonRemovable -or $installed[0].IsFramework) { Complete-U77 'Protected' 'Windows marks this package as protected or a framework.' '' 5 }
               Remove-AppxPackage -Package '{{app.Id}}' -ErrorAction Stop
               if (@(Get-AppxPackage -ErrorAction Stop | Where-Object PackageFullName -EQ '{{app.Id}}').Count -ne 0) {
                 Complete-U77 'Present' 'Package registration remains present after deployment.' '' 2

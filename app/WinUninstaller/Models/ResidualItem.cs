@@ -25,6 +25,8 @@ public partial class ResidualItem : ObservableObject
     public ConfidenceLevel Confidence { get; set; }
     public string Reason { get; set; } = string.Empty;
     public bool CanClean { get; set; }
+    internal string? ReviewedFingerprint { get; init; }
+    internal IReadOnlyList<Services.UnregisteredAppService.Entry>? ReviewedFiles { get; init; }
     public string Title => string.IsNullOrEmpty(Path) ? string.Empty : (System.IO.Path.GetFileName(Path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : Path);
 
     [ObservableProperty]
@@ -32,7 +34,7 @@ public partial class ResidualItem : ObservableObject
 
     public string SizeDisplay => SizeBytes switch
     {
-        0 => Type is ResidualType.RegistryKey or ResidualType.RegistryValue ? "Registry" : "Unknown",
+        0 when Type != ResidualType.File => Type is ResidualType.RegistryKey or ResidualType.RegistryValue ? "Registry" : "Unknown",
         < 1024 => $"{SizeBytes} B",
         < 1024 * 1024 => $"{SizeBytes / 1024.0:F1} KB",
         < 1024 * 1024 * 1024 => $"{SizeBytes / 1024.0 / 1024.0:F1} MB",

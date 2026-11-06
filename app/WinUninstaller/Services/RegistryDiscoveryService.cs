@@ -162,23 +162,9 @@ public class RegistryDiscoveryService
 
         var installerType = DetectInstallerType(string.IsNullOrWhiteSpace(uninstallString) ? quietUninstallString : uninstallString, sub);
 
-        // Normalize MSI quiet string if not provided
+        // Derive quiet commands using the same rules as launch preparation.
         if (string.IsNullOrWhiteSpace(quietUninstallString))
-        {
-            if (installerType == InstallType.Msi)
-            {
-                var (_, msiArguments) = UninstallService.SplitCommand(Environment.ExpandEnvironmentVariables(uninstallString));
-                var product = UninstallService.MsiProductOperand(msiArguments);
-                if (product is not null)
-                    quietUninstallString = $"MsiExec.exe /X{product} /qn /norestart";
-            }
-            else if (installerType == InstallType.InnoSetup)
-            {
-                var exe = ParseExeFromString(uninstallString);
-                if (!string.IsNullOrEmpty(exe))
-                    quietUninstallString = $"\"{exe}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART";
-            }
-        }
+            quietUninstallString = RegisteredUninstallCommand.BuildQuietCommand(uninstallString, installerType) ?? "";
 
         return new InstalledApp
         {
@@ -205,8 +191,8 @@ public class RegistryDiscoveryService
     {
         // Many EXE installers use GUID-shaped keys (including Google Drive).
         // Never replace their registered EXE with msiexec merely for that reason.
-        var (executable, _) = UninstallService.SplitCommand(Environment.ExpandEnvironmentVariables(uninstallString));
-        if (UninstallService.IsWindowsInstallerExecutable(executable))
+        var (executable, _) = RegisteredUninstallCommand.SplitCommand(Environment.ExpandEnvironmentVariables(uninstallString));
+        if (RegisteredUninstallCommand.IsWindowsInstallerExecutable(executable))
         {
             return InstallType.Msi;
         }
@@ -247,8 +233,10 @@ public class RegistryDiscoveryService
             using var proc = Process.Start(psi);
             if (proc == null) { scan.SourceError(new InvalidOperationException("PowerShell did not start.")); return scan.Finish(); }
 
-            var outputTask = proc.StandardOutput.ReadToEndAsync();
-            var errorTask = proc.StandardError.ReadToEndAsync();
+            // The polling loop owns cancellation and kills only this query process;
+            // keep draining both pipes so a full buffer cannot deadlock the child.
+            var outputTask = proc.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            var errorTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
             var wait = Stopwatch.StartNew();
             while (!proc.WaitForExit(100))
             {
@@ -394,19 +382,6 @@ public class RegistryDiscoveryService
             return bytes / 1024;
         }
         catch { return 0; }
-    }
-
-    private static string? ParseExeFromString(string s)
-    {
-        s = s.Trim();
-        if (s.StartsWith('"'))
-        {
-            var end = s.IndexOf('"', 1);
-            if (end > 0) return s[1..end];
-        }
-        var space = s.IndexOf(' ');
-        var exe = space > 0 ? s[..space] : s;
-        return exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : null;
     }
 
     private static string GetStr(RegistryKey key, string name)

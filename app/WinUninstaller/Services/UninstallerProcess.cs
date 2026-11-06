@@ -105,7 +105,7 @@ internal sealed class UninstallerProcess : IDisposable
         }
     }
 
-    public async Task<bool> WaitAsync(TimeSpan timeout, IProgress<string>? progress)
+    public async Task<bool> WaitAsync(TimeSpan timeout, IProgress<string>? progress, bool checkHandoffImmediately = false)
     {
         if (_broker is not null) return await _broker.WaitAsync(timeout);
         if (_job is null)
@@ -115,7 +115,10 @@ internal sealed class UninstallerProcess : IDisposable
         }
         var clock = Stopwatch.StartNew();
         var reported = false;
-        var nextHandoffCheck = TimeSpan.FromSeconds(2);
+        // The initial launch gets a short settling period before querying process
+        // metadata. A later read-only retry has already paid that delay and must
+        // use its whole timeout for verification rather than waiting again.
+        var nextHandoffCheck = checkHandoffImmediately ? TimeSpan.Zero : TimeSpan.FromSeconds(2);
         while (!IsTreeComplete)
         {
             if (Root.HasExited && !reported)

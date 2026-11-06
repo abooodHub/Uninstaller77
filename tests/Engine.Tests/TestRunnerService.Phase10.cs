@@ -47,8 +47,8 @@ public partial class TestRunnerService
         {
             foreach (var name in new[] { "cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe", "regsvr32.exe" })
                 foreach (var executable in new[] { name, @"C:\Windows\System32\" + name, @"C:\Program Files\Tools\" + name.ToUpperInvariant() })
-                    if (UninstallService.IsAllowedExecutable(executable)) throw new Exception("Unsafe command host accepted: " + executable);
-            if (!UninstallService.IsAllowedExecutable(@"C:\Fixture\uninstall.exe") || !UninstallService.IsAllowedExecutable("msiexec.exe"))
+                    if (RegisteredUninstallCommand.IsAllowedExecutable(executable)) throw new Exception("Unsafe command host accepted: " + executable);
+            if (!RegisteredUninstallCommand.IsAllowedExecutable(@"C:\Fixture\uninstall.exe") || !RegisteredUninstallCommand.IsAllowedExecutable("msiexec.exe"))
                 throw new Exception("Direct uninstall engines were rejected.");
             return "24 short/absolute/mixed-case shell-host paths rejected before process launch; direct uninstallers retained.";
         });
@@ -77,6 +77,11 @@ public partial class TestRunnerService
                 MsixDeploymentService.ParseReceipt(json, "one", "Other.Package") is not null ||
                 MsixDeploymentService.ParseReceipt("U77_RESULT:invalid", "one", "Test.Package") is not null)
                 throw new Exception("Receipt validation accepted the wrong operation or package.");
+            foreach (var invalid in new[] { "U77_RESULT:[]", "U77_RESULT:null", "U77_RESULT:42",
+                json.Replace("\"state\":\"Removed\"", "\"state\":\"Failed\",\"state\":\"Removed\""),
+                json.Replace("\"error\":\"\"", "\"error\":{}") })
+                if (MsixDeploymentService.ParseReceipt(invalid, "one", "Test.Package") is not null)
+                    throw new Exception("A receipt with an invalid shape was accepted.");
             return "Missing, malformed, mismatched and valid receipts are distinguished.";
         });
         await RunTest("MSIX exit zero requires receipt and independent verification", results, logger, () =>
@@ -86,7 +91,10 @@ public partial class TestRunnerService
             var receipt = new MsixDeploymentService.Receipt("one", "Test.Package", "Removed", "", "");
             if (!MsixDeploymentService.Evaluate(0, receipt, absent, "").Success ||
                 MsixDeploymentService.Evaluate(0, null, absent, "").Success ||
-                MsixDeploymentService.Evaluate(0, receipt, present, "").Verification != VerificationStatus.Unknown)
+                MsixDeploymentService.Evaluate(0, receipt, present, "").Verification != VerificationStatus.Unknown ||
+                MsixDeploymentService.Evaluate(2, receipt with { State = "Absent" }, present, "").FailureCode != "MsixVerificationMismatch" ||
+                MsixDeploymentService.Evaluate(2, receipt with { State = "Present" }, absent, "").FailureCode != "MsixVerificationMismatch" ||
+                MsixDeploymentService.Evaluate(1, receipt, absent, "").FailureCode != "MsixVerificationMismatch")
                 throw new Exception("A process exit became false MSIX success.");
             return "Success needs all three signals; inconsistent results pause.";
         });

@@ -22,6 +22,56 @@ public partial class TestRunnerService
         static InstalledApp Identity() => new() { Id = Guid.NewGuid().ToString("N"), Name = "Phase11_" + Guid.NewGuid().ToString("N"),
             RegistryHive = "HKCU", RegistryKeyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Phase11_" + Guid.NewGuid().ToString("N") };
 
+        await RunTest("SQLite schema migration creates a durable backup and rolls back an interrupted transaction", results, logger, () =>
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "U77_SchemaRollback_" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, "legacy.db");
+            try
+            {
+                using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString()))
+                {
+                    connection.Open(); using var command = connection.CreateCommand();
+                    command.CommandText = "CREATE TABLE UninstallHistory (Id INTEGER PRIMARY KEY, AppId TEXT NOT NULL, AppName TEXT NOT NULL, Publisher TEXT, Version TEXT, CachedIconPath TEXT, UninstallDate TEXT NOT NULL, ExitCode INTEGER, Success INTEGER, Notes TEXT); INSERT INTO UninstallHistory VALUES (1,'owned','Original evidence','publisher','1.0','','2026-01-01',-3,0,'preserve');";
+                    command.ExecuteNonQuery();
+                }
+
+                DatabaseService.BeforeSchemaCommitForTests = () => throw new IOException("Owned migration interruption");
+                try { _ = new DatabaseService(path); throw new Exception("The migration interruption was ignored."); }
+                catch (IOException ex) when (ex.Message == "Owned migration interruption") { }
+                finally { DatabaseService.BeforeSchemaCommitForTests = null; }
+
+                var backup = Directory.GetFiles(folder, "legacy.db.pre-schema-v0-*.bak").Single();
+                AssertLegacy(path, "Failed migration changed the original database.");
+                AssertLegacy(backup, "Pre-migration backup did not preserve the original logical database.");
+
+                var migrated = new DatabaseService(path);
+                if (migrated.GetHistory().Single().Notes != "preserve") throw new Exception("Successful retry lost legacy evidence.");
+                using var verified = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly }.ToString());
+                verified.Open(); using var version = verified.CreateCommand(); version.CommandText = "PRAGMA user_version;";
+                if (Convert.ToInt32(version.ExecuteScalar()) != DatabaseService.CurrentSchemaVersion)
+                    throw new Exception("Successful migration did not record the explicit schema version.");
+                return "A consistent SQLite backup preceded DDL; an injected pre-commit failure rolled back schema and version, then a clean retry preserved the row and recorded the current version.";
+
+                static void AssertLegacy(string database, string message)
+                {
+                    using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Mode = SqliteOpenMode.ReadOnly }.ToString());
+                    connection.Open(); using var command = connection.CreateCommand();
+                    command.CommandText = "PRAGMA user_version;";
+                    if (Convert.ToInt32(command.ExecuteScalar()) != 0) throw new Exception(message);
+                    command.CommandText = "SELECT Notes FROM UninstallHistory WHERE Id=1;";
+                    if ((string?)command.ExecuteScalar() != "preserve") throw new Exception(message);
+                    command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('UninstallHistory') WHERE name='Outcome';";
+                    if (Convert.ToInt32(command.ExecuteScalar()) != 0) throw new Exception(message);
+                }
+            }
+            finally
+            {
+                DatabaseService.BeforeSchemaCommitForTests = null;
+                SqliteConnection.ClearAllPools();
+                if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            }
+        });
+
         await RunTest("Phase11 legacy SQLite migration preserves evidence and unresolved outcomes", results, logger, () =>
         {
             var folder = Path.Combine(Path.GetTempPath(), "U77_Phase11_Migration_" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
@@ -96,6 +146,43 @@ public partial class TestRunnerService
             var scan = await new FailedResidualFixture().ScanResidualsAsync(Identity());
             if (scan.State != ResidualScanState.Failed || scan.Completed || !scan.Error.Contains("isolated scan failure")) throw new Exception("Scan exception was lost or became success.");
             return "Injected I/O failure became Failed, with original error and no completion claim.";
+        });
+        await RunTest("Residual scan distinguishes missing, unrecorded and inspected install folders", results, logger, async () =>
+        {
+            var app = Identity();
+            var service = new ResidualScanService();
+            var unrecorded = await service.ScanResidualsAsync(app);
+            var folder = Directory.CreateTempSubdirectory("U77_EmptyResidual_");
+            try
+            {
+                app.InstallLocation = Path.Combine(folder.FullName, "gone");
+                var missing = await service.ScanResidualsAsync(app);
+                app.InstallLocation = folder.FullName;
+                var empty = await service.ScanResidualsAsync(app);
+                if (unrecorded.InstallFolder != ResidualInstallFolderState.NotRecorded ||
+                    missing.InstallFolder != ResidualInstallFolderState.Missing ||
+                    empty.InstallFolder != ResidualInstallFolderState.Checked || empty.Items.Count != 0)
+                    throw new Exception("The UI could not distinguish scan coverage or offered an empty folder as a finding.");
+            }
+            finally { folder.Delete(); }
+            return "Read-only fixture proved unrecorded, already absent and empty inspected install folders are distinct.";
+        });
+        await RunTest("Versioned display names find unversioned informational folders", results, logger, async () =>
+        {
+            var app = Identity();
+            var alias = "U77_VersionedResidual_" + Guid.NewGuid().ToString("N");
+            var location = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), alias);
+            Directory.CreateDirectory(location);
+            try
+            {
+                app.Name = alias + " 4.0";
+                app.Version = "4.0.1";
+                var scan = await new ResidualScanService().ScanResidualsAsync(app);
+                if (scan.Items.Single(item => item.Path == location).CanClean)
+                    throw new Exception("A name-derived folder became eligible for deletion.");
+            }
+            finally { Directory.Delete(location); }
+            return "Exact unversioned AppData match found without authorizing deletion.";
         });
         await RunTest("Phase11 cancelled and unidentified scans are not completed", results, logger, async () =>
         {

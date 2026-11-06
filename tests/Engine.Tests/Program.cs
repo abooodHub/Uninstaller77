@@ -13,6 +13,9 @@ internal static class EngineTestsProgram
             try { return UninstallBroker.RunAsync(args).GetAwaiter().GetResult(); }
             catch (Exception ex) { Console.Error.WriteLine(ex); return 2; }
         }
+        if (args.Length == 3 && args[0] is "--msi-user-fixture" or "--msi-protected-queue-fixture")
+            return OwnedMsiAcceptance.RunAsync(args[1], args[2], args[0] == "--msi-protected-queue-fixture").GetAwaiter().GetResult();
+
         // Explicit, separately authorized UAC acceptance check. Never part of
         // --report-dir; it can remove only the unique HKCU fixture created here.
         if (args.Length == 2 && args[0] == "--broker-uac-check")
@@ -90,7 +93,7 @@ internal static class EngineTestsProgram
         if (args.Length == 2 && args[0] == "--inspect-launch-registry")
         {
             var app = RegistryDiscoveryService.ReadExactRegistration(args[1]) ?? throw new InvalidDataException("Registration unavailable.");
-            var launch = UninstallService.PrepareLaunch(app, false);
+            var launch = RegisteredUninstallCommand.PrepareLaunch(app, false);
             Console.WriteLine(JsonSerializer.Serialize(new { readOnly = true, app.Name, app.InstallerType, app.RegistryKeyPath, launch.Executable, launch.Arguments, launch.IsMsi, uninstallerLaunched = false }));
             return 0;
         }

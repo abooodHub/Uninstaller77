@@ -16,8 +16,15 @@
 #ifndef PayloadInstallList
   #error Build this installer using installer\Build-Release.ps1 to generate its file inventory.
 #endif
+#ifndef ExpectedWebView2Sha
+  #error Supply the signed WebView2 installer through Build-Release.ps1.
+#endif
 
 [Setup]
+#ifdef U77SignToolName
+SignTool={#U77SignToolName}
+SignedUninstaller=yes
+#endif
 AppId={{B1477720-8D55-4E92-8C77-771177100001}
 AppName=Uninstaller 77
 AppVersion={#AppVersion}
@@ -29,9 +36,9 @@ VersionInfoVersion={#AppVersion}.0
 DefaultDirName={localappdata}\Programs\Uninstaller 77
 DefaultGroupName=Uninstaller 77
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0
+ArchitecturesAllowed=x64os
+ArchitecturesInstallIn64BitMode=x64os
+MinVersion=10.0.14393
 DisableWelcomePage=no
 DisableDirPage=no
 DisableProgramGroupPage=yes
@@ -70,7 +77,11 @@ english.StepOptions=Shortcuts
 english.StepReady=Ready
 english.StepInstall=Installing
 english.StepDone=Completed
-english.RuntimesMissing=Uninstaller 77 requires the .NET 8 Desktop Runtime (x64) and Microsoft Edge WebView2 Runtime. Install the missing prerequisites and run Setup again. No application files were installed.
+english.WebView2PrepareFailed=Setup could not prepare its bundled Microsoft Edge WebView2 installer.%n%n%1%n%nDownload a fresh copy of Setup and run it again.
+english.WebView2LaunchFailed=Windows could not start the bundled Microsoft Edge WebView2 installer. Windows error %1.%n%nKeep the Setup log for support and try again.
+english.WebView2InstallFailed=Microsoft Edge WebView2 Runtime setup returned code %1.%n%nRetry Setup or install the official WebView2 Evergreen Runtime, then run Setup again. No application files were replaced.
+english.WebView2RegistrationMissing=Microsoft Edge WebView2 setup finished, but Runtime 156.0.4314.42 or newer is not registered.%n%nInstall or repair WebView2 Evergreen Runtime from Microsoft and run Setup again.
+english.WebView2Restart=Microsoft Edge WebView2 Runtime requires Windows to restart. Restart Windows, then run Setup again.
 english.DataPolicy=Your settings, logs, history, icon cache and quarantine are preserved during upgrades and removal. They remain in your Windows profile under LocalAppData\WinUninstaller. Quarantine is never erased by Setup.
 english.DesktopShortcut=Create a desktop shortcut
 english.LaunchApp=Launch Uninstaller 77
@@ -81,6 +92,7 @@ english.PayloadNotWritable=Setup cannot safely update this file because it is in
 Name: "desktopicon"; Description: "{cm:DesktopShortcut}"
 
 [Files]
+Source: "{#WebView2Installer}"; DestName: "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 #include PayloadInstallList
 
 [Icons]
@@ -110,37 +122,11 @@ function KillTimer(hWnd, nIDEvent: LongWord): Boolean;
 function SystemParametersInfo(Action, Param: LongWord; var Value: LongWord; Flags: LongWord): Boolean;
   external 'SystemParametersInfoW@user32.dll stdcall';
 
-function HasVersionedFile(Root, Pattern, FileName: String): Boolean;
-var Find: TFindRec;
-begin
-  Result := False;
-  if FindFirst(AddBackslash(Root) + Pattern, Find) then begin
-    try
-      repeat
-        if FileExists(AddBackslash(Root) + Find.Name + '\' + FileName) then begin
-          Result := True;
-          Break;
-        end;
-      until not FindNext(Find);
-    finally FindClose(Find); end;
-  end;
-end;
-
-function InitializeSetup: Boolean;
-var DesktopRuntime, WebView: Boolean;
-begin
-  DesktopRuntime := HasVersionedFile(ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App'), '8.*', 'PresentationFramework.dll');
-  WebView := HasVersionedFile(ExpandConstant('{commonpf32}\Microsoft\EdgeWebView\Application'), '*', 'msedgewebview2.exe') or
-    HasVersionedFile(ExpandConstant('{localappdata}\Microsoft\EdgeWebView\Application'), '*', 'msedgewebview2.exe');
-  Log(Format('Prerequisites: DesktopRuntime=%d WebView2=%d', [Ord(DesktopRuntime), Ord(WebView)]));
-  Result := DesktopRuntime and WebView;
-  if not Result then SuppressibleMsgBox(CustomMessage('RuntimesMissing'), mbError, MB_OK, IDOK);
-end;
-
 #include "PayloadPreflight.iss"
 #include "LegacyRuntime.iss"
+#include "WebView2Prerequisite.iss"
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+function CheckApplicationFiles: String;
 var BlockedFile: String;
 begin
   Result := '';
@@ -153,8 +139,20 @@ begin
   { Covers older releases, teardown and nonstandard launches without our mutex. }
   BlockedFile := FirstUnavailablePayloadFile(ExpandConstant('{app}'));
   if BlockedFile = '' then BlockedFile := FirstUnavailableLegacyRuntime(ExpandConstant('{app}'));
-  if BlockedFile <> '' then
+  if BlockedFile <> '' then begin
     Result := FmtMessage(CustomMessage('PayloadNotWritable'), [BlockedFile]);
+    Exit;
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := CheckApplicationFiles;
+  if Result <> '' then Exit;
+  Result := PrepareWebView2Runtime(NeedsRestart);
+  if Result <> '' then Exit;
+  { Setup may have waited for the runtime installer while the app was opened. }
+  Result := CheckApplicationFiles;
 end;
 
 procedure StepTick(Wnd: HWND; Msg: UINT; Event, Tick: LongWord);

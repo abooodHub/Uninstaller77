@@ -97,7 +97,7 @@ public partial class TestRunnerService
             try
             {
                 try { UninstallBroker.ValidateRequest(new(pathName, false, shell, "/c exit 0")); throw new Exception("Shell command accepted."); }
-                catch (UninstallService.LaunchValidationException) { }
+                catch (RegisteredUninstallCommand.LaunchValidationException) { }
                 return "Exact uninstall-key identity required; arbitrary paths, nested keys and registered shell hosts rejected.";
             }
             finally { RemoveFixture(name); }

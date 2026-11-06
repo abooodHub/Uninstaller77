@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 declare const __APP_VERSION__: string
 import {
@@ -23,56 +23,11 @@ import edgeIcon from './assets/browsers/edge.png'
 import braveIcon from './assets/browsers/brave.png'
 import productIcon from './assets/u77.png'
 import { unregisteredErrorText, localizeState, localizeText, queueProgress, inventoryCount, historyTimestamp, browserGroups, resolveExtensionBrowser, extensionIdentity, extensionPermissionImpact, virtualRange, markFirstAppearance, verifiedQueuePercent, reconcileSearch, historyOutcome, queueFailureInfo } from './presentation'
+import type { AppItem, ExtensionItem, HistoryItem, State, RequestMessage } from './host-contract'
 
-type AppItem = {
-  id: string; name: string; publisher: string; version: string; size: string; sizeKb: number
-  installDate: string; architecture: string; installerType: string; source: string
-  icon: string | null; selected: boolean; installLocation: string; registryKey: string
-  uninstallCommand: string; quietUninstallCommand: string
-  isBuiltIn?: boolean; isThirdParty?: boolean; isBundleware?: boolean; isLogged?: boolean
-  description?: string
-}
-
-type ExtensionItem = {
-  id: string; browser: string; profile: string; name: string; desc: string
-  version: string; icon: string | null; isPolicyManaged: boolean; installationLocation: string
-  permissions?: string[]; optionalPermissions?: string[]; hostPermissions?: string[]; optionalHostPermissions?: string[]
-  contentScriptHosts?: string[]; enabledState?: 'Enabled' | 'Disabled' | 'Installed' | 'Unknown'; installationSource?: string; managementCapability?: string
-}
-
-type HistoryItem = {
-  id: number; name: string; publisher: string; version: string; date: string; installerType: string
-  success: boolean; outcome?: string; status: string; residualStatus: string; exitCode: number | null; icon: string | null; notes: string; test: boolean
-  cleanedItemsCount: number; cleanedSizeBytes: number
-}
-
-type State = {
-  revision?: number; measurePerformance?: boolean
-  language: 'en' | 'ar'; direction: 'ltr' | 'rtl'; reduceMotion: boolean; settingsOpen: boolean; notice: string; noticeIsError: boolean
-  page: 'apps' | 'history' | 'extensions' | 'control'
-  activeSidebarItem: string; navigation: Record<string, string>
-  appsPage: any; historyPage: any; extensionsPage: any; controlPage?: any
-}
-
-type RequestMessage =
-  | { type: 'state'; state: State }
-  | { type: 'response'; id: string; ok: boolean; state?: State; error?: string }
-  | { type: 'error'; error: string }
-
-declare global {
-  interface Window {
-    chrome?: {
-      webview?: {
-        postMessage: (message: unknown) => void
-        addEventListener: (event: 'message', listener: (event: MessageEvent<RequestMessage>) => void) => void
-        removeEventListener: (event: 'message', listener: (event: MessageEvent<RequestMessage>) => void) => void
-      }
-    }
-  }
-}
 
 const defaultState: State = {
-  language: 'ar', direction: 'rtl', reduceMotion: false, settingsOpen: false, notice: '', noticeIsError: false,
+  language: 'en', direction: 'ltr', reduceMotion: false, settingsOpen: false, notice: '', noticeIsError: false,
   page: 'apps', activeSidebarItem: 'AllApps', navigation: {},
   appsPage: {
     items: [], total: 0, filtered: 0, recent: 0, large: 0, store: 0, bundleware: 0, logged: 0, infrequent: 0,
@@ -84,8 +39,30 @@ const defaultState: State = {
   extensionsPage: { loading: false, scanned: false, items: [] },
 }
 
+function useFocusTrap<T extends HTMLElement>(active: boolean) {
+  const ref = useRef<T>(null)
+  useLayoutEffect(() => {
+    if (!active || !ref.current) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const first = ref.current.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
+    ;(first || ref.current).focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [active])
+  const onKeyDown = useCallback((event: ReactKeyboardEvent<T>) => {
+    if (!active || event.key !== 'Tab' || !ref.current) return
+    const focusable = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
+      .filter(item => item.getAttribute('aria-hidden') !== 'true')
+    if (!focusable.length) { event.preventDefault(); ref.current.focus(); return }
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }, [active])
+  return [ref, onKeyDown] as const
+}
+
 function useHost() {
   const [state, setState] = useState<State>(defaultState)
+  const [hasHostState, setHasHostState] = useState(false)
   const [toast, setToast] = useState('')
   const [toastIsError, setToastIsError] = useState(false)
   const [sharedDetailsId, setSharedDetailsId] = useState('')
@@ -131,6 +108,7 @@ function useHost() {
       const commit = () => flushSync(() => {
         stateRef.current = next
         setState(next)
+        setHasHostState(true)
       })
       if (wantsSharedTransition && !prefersMotion && transitionDocument.startViewTransition) {
         try { transitionDocument.startViewTransition(commit) } catch { commit() }
@@ -179,7 +157,7 @@ function useHost() {
     return () => clearTimeout(timer)
   }, [toast])
 
-  return { state, setState, act, toast, setToast, toastIsError, setToastIsError, sharedDetailsId }
+  return { state, setState, hasHostState, act, toast, setToast, toastIsError, setToastIsError, sharedDetailsId }
 }
 
 interface AppIconProps {
@@ -279,6 +257,13 @@ function VirtualList({ items, render, rowHeight, className = '' }: { items: any[
 
 function App() {
   const host = useHost()
+  if (!host.hasHostState && typeof window !== 'undefined' && window.chrome?.webview) {
+    return <div className="desktop-startup" aria-busy="true"><img src={productIcon} alt="Uninstaller 77" /></div>
+  }
+  return <DesktopApp host={host} />
+}
+
+function DesktopApp({ host }: { host: ReturnType<typeof useHost> }) {
   const { act, setToast, setToastIsError } = host
   const { sharedDetailsId } = host
   const state = useMemo(() => localizeState(host.state) as State, [host.state])
@@ -296,7 +281,6 @@ function App() {
   const [search, setSearch] = useState('')
   const pendingSearch = useRef<string | null>(null)
   const [queueReview, setQueueReview] = useState<AppItem[] | null>(null)
-  const [clearReview, setClearReview] = useState(false)
   const [programsExpanded, setProgramsExpanded] = useState(true)
   const [extensionsExpanded, setExtensionsExpanded] = useState(true)
   const [extensionBrowser, setExtensionBrowser] = useState('')
@@ -329,7 +313,7 @@ function App() {
     return () => clearTimeout(timer)
   }, [search, p.search, act])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.lang = state.language
     document.documentElement.dir = state.language === 'ar' ? 'rtl' : 'ltr'
     document.documentElement.classList.toggle('reduce-motion', state.reduceMotion)
@@ -529,8 +513,8 @@ function App() {
               {p.isLoading && p.hasConfirmedInventory && (
                 <div className="inventory-refresh" role="status"><LoaderCircle size={16} className="spin" />{lang.refreshing}<span>{lang.stages[p.inventoryStage as keyof typeof lang.stages] || p.inventoryStage}</span></div>
               )}
-              {p.inventoryState === 'Failed' && (
-                <div className="inventory-error" role="alert"><CircleAlert size={18} /><div><strong>{lang.inventoryFailed}</strong><p>{p.inventoryError}</p></div><button className="button quiet" onClick={() => void run('refresh')}>{lang.retry}</button></div>
+              {['Failed', 'Partial'].includes(p.inventoryState) && (
+                <div className="inventory-error" role="alert"><CircleAlert size={18} /><div><strong>{p.inventoryState === 'Partial' ? lang.inventoryPartial : lang.inventoryFailed}</strong><p>{p.inventoryError}</p></div><button className="button quiet" onClick={() => void run('refresh')}>{lang.retry}</button></div>
               )}
               {p.inventoryState === 'Failed' && !p.hasConfirmedInventory ? null : !p.hasConfirmedInventory ? (
                 <InventoryLoading stage={p.inventoryStage} lang={lang} />
@@ -558,7 +542,7 @@ function App() {
         )}
 
         {state.page === 'history' && (
-          <HistoryPage page={hp} lang={lang} run={run} onClear={() => setClearReview(true)} />
+          <HistoryPage page={hp} lang={lang} run={run} onClear={() => void run('clearHistory')} />
         )}
       </main>
 
@@ -585,20 +569,9 @@ function App() {
           execute={async () => { const ids = queueReview.map(item => item.id); setQueueReview(null); return run('runBatch', { appIds: ids }) }} />
       )}
 
-      {op.open && <ProgressDialog op={op} lang={lang} run={run} />}
+      {op.open && !residual.open && <ProgressDialog op={{ ...op, residual }} lang={lang} run={run} />}
 
-      {residual.open && <ResidualDialog residual={residual} lang={lang} labels={labels} run={run} />}
-
-      {clearReview && (
-        <ConfirmDialog
-          title={lang.clearHistory}
-          body={lang.clearHistoryConfirm}
-          confirm={lang.clearHistory}
-          cancel={lang.cancel}
-          onCancel={() => setClearReview(false)}
-          onConfirm={async () => { setClearReview(false); await run('clearHistory') }}
-        />
-      )}
+      {residual.open && <ResidualDialog key={residual.reviewId} residual={residual} op={op} lang={lang} labels={labels} run={run} />}
 
       {state.settingsOpen && <SettingsDialog state={state} lang={lang} run={run} />}
 
@@ -705,6 +678,7 @@ function ExtensionsPage({ page, lang, run, selectedBrowser, onSelectBrowser }: {
   const [filter, setFilter] = useState('All')
   const [sort, setSort] = useState('Name')
   const [details, setDetails] = useState<ExtensionItem | null>(null)
+  const [detailsRef, onDetailsKeyDown] = useFocusTrap<HTMLElement>(Boolean(details))
   const rtl = lang === words.ar
   const items: ExtensionItem[] = page.items || []
   const groups = browserGroups(items, page.browsers || [])
@@ -816,7 +790,7 @@ function ExtensionsPage({ page, lang, run, selectedBrowser, onSelectBrowser }: {
           </div>
         )}
       </section>
-      {details && <div className="extension-detail-backdrop" onClick={() => setDetails(null)}><aside className="extension-detail-drawer" role="dialog" aria-modal="true" aria-label={lang.extensionDetails} onClick={event => event.stopPropagation()}>
+      {details && <div className="extension-detail-backdrop" onClick={() => setDetails(null)}><aside ref={detailsRef} onKeyDown={onDetailsKeyDown} tabIndex={-1} className="extension-detail-drawer" role="dialog" aria-modal="true" aria-label={lang.extensionDetails} onClick={event => event.stopPropagation()}>
         <div className="extension-detail-head"><div className="extension-detail-title"><AppIcon app={{name: details.name, icon: details.icon}} variant="list"/><div><h2><bdi dir="auto">{details.name}</bdi></h2><span><BrowserIcon browser={details.browser}/><bdi dir="ltr">{details.browser}</bdi> · <bdi dir="auto">{details.profile}</bdi></span></div></div><button className="button quiet icon-button" aria-label={lang.close} onClick={() => setDetails(null)}><X size={16}/></button></div>
         <div className="extension-detail-scroll extension-detail-compact">
           <section className="extension-detail-section"><h3>{lang.extensionOverview}</h3><div className="extension-summary-grid"><div><span>{lang.version}</span><bdi dir="ltr">{details.version || '—'}</bdi></div><div><span>{lang.extensionStatus}</span><strong className={`extension-status-badge ${extensionStateClass(details)}`}>{extensionStateLabel(details)}</strong></div>{details.isPolicyManaged && <div><span>{lang.extensionManaged}</span><strong>{lang.extensionManaged}</strong></div>}</div>{details.desc && <p className="extension-description">{details.desc}</p>}</section>
@@ -848,6 +822,8 @@ function ControlPage({ lang, run, page, inventory, scope }: {
   const pendingReview = Boolean(inventory.hasPendingQueueReview)
   const tools = [
     { id: 'restore', icon: <RotateCcw />, title: lang.quarantineRestore, desc: lang.quarantineRestoreDesc, cta: text.restore, action: () => run('restoreQuarantine') },
+    { id: 'pendingDeletion', icon: <FolderOpen />, title: lang.pendingDeletionTitle, desc: lang.pendingDeletionDescription,
+      cta: text.review, disabled: queueRunning || pendingReview, action: () => run('reviewPendingDeletion') },
     { id: 'history', icon: <History />, title: lang.uninstallHistory, desc: lang.historyCardDesc, cta: text.open, action: () => run('navigate', { target: 'History' }) },
     { id: 'export', icon: <Download />, title: lang.exportApps, desc: lang.exportAppsDesc, cta: text.export, disabled: !scope.ready || inventory.isLoading, action: () => run('exportApps') },
     { id: 'windows', icon: <WindowsStoreIcon />, title: text.windowsSettings, desc: text.windowsSettingsDescription, cta: text.open, action: () => run('openWindowsAppsSettings') },
@@ -902,9 +878,10 @@ function ModalHeader({ icon, title, close, closeLabel }: { icon: ReactNode; titl
 }
 
 function DetailsDialog({ app, labels, lang, close, sharedDetailsId = '' }: { app: AppItem; labels: any; lang: any; close: () => void; sharedDetailsId?: string }) {
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   return (
     <div className="modal-backdrop">
-      <div className="modal details-modal">
+      <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal details-modal" role="dialog" aria-modal="true" aria-label={lang.details}>
         <ModalHeader closeLabel={lang.close} icon={<AppWindow />} title={lang.details} close={close} />
         <div className="details-app">
           <AppIcon app={app} variant="details" sharedTransition={sharedDetailsId === app.id} />
@@ -939,6 +916,7 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
 }
 
 export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   const [stopPending, setStopPending] = useState(false)
   const [reviewRequest, setReviewRequest] = useState<string | null>(null)
   const reviewPhase = `${op.review?.queueId || ''}:${Boolean(op.review?.recovered)}`
@@ -947,19 +925,21 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
   const stopping = stopPending || op.stopRequested
   const attention = op.needsReview
   const done = !op.isRunning
+  const compact = !done && !attention
+  const scanning = op.operationState === 'ScanningResiduals'
   const color = attention || (stopping && !done) ? 'orange' : !done ? 'blue'
     : op.state === 'Succeeded' ? 'green' : ['PartialFailure', 'CompletedWithSkips'].includes(op.state) ? 'orange' : op.state === 'CriticalFailure' ? 'red' : 'gray'
   const summary = queueProgress(op)
   const verifiedPercent = verifiedQueuePercent(op)
-  const title = attention ? lang.attention : stopping && !done ? lang.stopRequesting : !done ? lang.running
+  const title = scanning ? lang.scanLeftovers : attention ? lang.attention : stopping && !done ? lang.stopRequesting : !done ? lang.running
     : ['PartialFailure', 'CompletedWithSkips'].includes(op.state) ? lang.queuePartial : op.state === 'CriticalFailure' ? lang.queueCritical : op.state === 'Stopped' ? lang.queueStopped : lang.complete
   const rows = op.queueItems?.length ? op.queueItems : (op.results || []).map((item: any) => ({
     ...item, state: item.state === 'Succeeded' ? 'Completed' : item.state === 'NeedsAttention' ? 'NeedsUserAttention' : item.state === 'Skipped' ? 'Cancelled' : item.state
   }))
-  const active = attention ? '—' : op.isRunning && !['Completed', 'Failed', 'Cancelled', 'ScanningResiduals'].includes(op.operationState) ? 1 : 0
+  const active = attention ? '—' : op.isRunning && !op.preparingProtection && !['Completed', 'Failed', 'Cancelled', 'ScanningResiduals'].includes(op.operationState) ? 1 : 0
   const index = rows.findIndex((item: any) => item.app?.id === op.app?.id) + 1
   const currentState = done ? rows.find((item: any) => item.app?.id === op.app?.id)?.state || op.operationState : op.operationState
-  const stage = lang.stages[currentState as keyof typeof lang.stages] || op.stage || '—'
+  const stage = scanning ? op.residual?.stage || lang.scanLeftovers : op.preparingProtection ? op.protectionStage : lang.stages[currentState as keyof typeof lang.stages] || op.stage || '—'
   const logRef = useRef<HTMLDivElement>(null)
   const queueRef = useRef<HTMLDivElement>(null)
   const currentRef = useRef<HTMLDivElement>(null)
@@ -975,7 +955,7 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
   }
   return (
     <div className="modal-backdrop high-layer queue-backdrop" dir={lang === words.ar ? 'rtl' : 'ltr'}>
-      <div className={'modal progress-modal phase10-progress status-' + color + ' queue-workspace' + (attention ? ' is-review' : '')} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className={'modal progress-modal phase10-progress status-' + color + ' queue-workspace' + (attention ? ' is-review' : '') + (compact ? ' is-compact' : '')} role="dialog" aria-modal="true" aria-label={title}>
         <header className="queue-header">
           <span className="queue-status-icon" aria-hidden="true">{attention ? <CircleAlert /> : !done ? <LoaderCircle className="spin" /> : op.state === 'Succeeded' ? <BadgeCheck /> : <Info />}</span>
           <div className="queue-heading"><small>{lang.queueSubtitle}</small><h2>{title}</h2></div>
@@ -988,9 +968,9 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
             <section className="queue-current" aria-label={lang.current}>
               <AppIcon app={op.app || { name: '' }} variant="progress" isProcessing={op.isRunning && !attention} operationState={currentState} fallbackLabel={lang.iconUnavailable} />
               <div className="queue-current-copy">
-                <div className="queue-current-label"><small>{attention ? lang.reviewApplication : done ? lang.lastApplication : lang.current}</small><span>{lang.position} <bdi dir="ltr">{index}/{op.total || 0}</bdi></span></div>
+                <div className="queue-current-label"><small>{attention ? lang.reviewApplication : done ? lang.lastApplication : lang.current}</small>{!compact && <span>{lang.position} <bdi dir="ltr">{index}/{op.total || 0}</bdi></span>}</div>
                 <h3><bdi dir="auto">{op.app?.name || '—'}</bdi></h3>
-                <div className="queue-current-stage" role="status"><span className={'queue-activity ' + (!done && !attention ? 'running' : '')} aria-hidden="true" /><span><span className="queue-stage-label">{lang.stage} · </span>{stage}</span></div>
+                <div className="queue-current-stage" role="status"><span className={'queue-activity ' + (!done && !attention ? 'running' : '')} aria-hidden="true" /><span>{stage}</span></div>
               </div>
             </section>
             {attention && <section className="queue-registration" data-state={op.review?.registrationState || 'NotChecked'} aria-label={lang.currentRegistration} title={lang.registrationReviewHint}>
@@ -998,6 +978,7 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
               <small>{lang.registrationReviewHint}</small>
             </section>}
             {(stopping || attention) && <div className="queue-attention" role="status"><CircleAlert size={18} /><span>{attention ? op.status : lang.stopAfter}</span></div>}
+            {op.protectionWarning && <div className="queue-attention" role="alert"><CircleAlert size={18} /><span>{op.protectionWarning}</span></div>}
             {done && !attention && ['RemovalNotObserved', 'RestartPending', 'VendorDependenciesInstalled'].includes(op.failureCode) && <div className="queue-attention" role="status"><CircleAlert size={18} /><span>{op.failureCode === 'VendorDependenciesInstalled' ? lang.vendorDependenciesInstalled : op.failureCode === 'RestartPending' ? lang.restartPending : lang.removalNotObserved}</span></div>}
             {(op.errorDetails || attention) && <details className="queue-diagnostics">
               <summary>{lang.queueDiagnostics}<ChevronDown size={14} /></summary>
@@ -1008,22 +989,22 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
               </div>
             </details>}
             {op.review?.recovered && <details className="queue-recovery-details"><summary>{lang.pendingReview}<ChevronDown size={14} /></summary><QueueReviewPanel review={op.review} lang={lang} /></details>}
-            <section className="queue-progress-section" aria-label={lang.queueCompletion}>
+            {scanning ? <div className="queue-scan-status" role="status"><LoaderCircle size={16} className="spin" /><span>{lang.residualLocations} <bdi dir="ltr">{op.residual?.scannedLocations || 0}</bdi></span></div> : <section className="queue-progress-section" aria-label={lang.queueCompletion}>
               <div className="queue-progress-caption"><strong>{lang.queueCompletion}</strong><bdi dir="ltr">{summary.percent}%</bdi></div>
               <div role="progressbar" aria-label={lang.queueCompletion} aria-valuemin={0} aria-valuemax={100} aria-valuenow={summary.percent} className={'progress-track determinate ' + (done ? 'finished' : '')}><span style={{ width: summary.percent + '%' }} /></div>
-              <div className="queue-progress-meta"><span>{lang.queueResolved} <bdi dir="ltr">{summary.resolved}</bdi></span><span>{lang.verifiedProgress} <bdi dir="ltr">{op.successful || 0}/{op.total || 0} · {verifiedPercent}%</bdi></span></div>
-            </section>
-            <div className="batch-counters overview">
+              <div className="queue-progress-meta"><span>{lang.queueResolved} <bdi dir="ltr">{summary.resolved}</bdi></span>{!compact && <span>{lang.verifiedProgress} <bdi dir="ltr">{op.successful || 0}/{op.total || 0} · {verifiedPercent}%</bdi></span>}</div>
+            </section>}
+            {!compact && <div className="batch-counters overview">
               <Metric label={lang.successful} value={op.successful || 0} tone="green" />
               <Metric label={lang.failed} value={op.failed || 0} tone="red" />
               <Metric label={lang.skipped} value={op.skipped || 0} />
               <Metric label={lang.active} value={active} />
               <Metric label={lang.remaining} value={op.remaining || 0} />
               <Metric label={lang.totalApps} value={op.total || 0} />
-            </div>
+            </div>}
           </div>
-          <section className="queue-list-section" aria-label={lang.queueItems}>
-            <div className="queue-list-heading"><h3>{done && !attention ? lang.results : lang.queueItems}</h3><bdi dir="ltr">{summary.resolved}</bdi></div>
+          <details className="queue-list-section queue-disclosure" open={done && !attention || undefined}>
+            <summary className="queue-list-heading"><strong>{done && !attention ? lang.results : lang.queueItems}</strong><ChevronDown size={14} /></summary>
             {(attention || done) && <p className="queue-history-hint">{lang.queueHistoryHint}</p>}
             <div className="queue-results" ref={queueRef}>
               {rows.map((item: any) => <div className={'queue-result result-' + item.state.toLowerCase() + (item.app?.id === op.app?.id ? ' is-current' : '')} key={item.operationId || item.app.id} ref={item.app?.id === op.app?.id ? currentRef : undefined}>
@@ -1032,18 +1013,20 @@ export function ProgressDialog({ op, lang, run }: { op: any; lang: any; run: (op
               </div>)}
               {!rows.length && <div className="queue-list-empty">{lang.queueEmpty}</div>}
             </div>
-          </section>
+          </details>
+          {done && !attention && op.residual?.summary?.length > 0 && <ResidualScanSummary residual={op.residual} lang={lang} />}
           <details className="queue-log"><summary>{lang.queueDiagnostics} · {lang.attempts} <bdi dir="ltr">{summary.attempts}</bdi><ChevronDown size={14} /></summary><div className="event-log" ref={logRef}>{(op.logs || []).map((line: string, i: number) => <div key={i}>{line}</div>)}</div></details>
         </div>
         <footer className="queue-footer">
           {op.review?.recovered && op.review?.canAcknowledge && <label className="review-consent"><input type="checkbox" data-testid="review-ack-consent" checked={ackConsent} onChange={e => setAckConsent(e.target.checked)} />{lang.ackConsent}</label>}
           <div className="modal-actions">
-            <span className="queue-footer-hint">{!done && !attention ? lang.stopAfter : attention ? op.review?.recovered ? lang.noAutoResume : lang.reviewActionHint : ''}</span>
+            <span className="queue-footer-hint">{!done && !attention && !scanning ? lang.stopAfter : attention ? op.review?.recovered ? lang.noAutoResume : lang.reviewActionHint : ''}</span>
             {op.review?.recovered && op.review?.canAcknowledge && <button className="button quiet" data-testid="queue-acknowledge" disabled={!ackConsent || op.retrying || reviewPending} onClick={async () => { setReviewRequest(reviewPhase); if (!await run('acknowledgeQueueReview', { queueId: op.review.queueId, acknowledged: true })) setReviewRequest(null) }}>{lang.acknowledgeUnresolved}</button>}
             {attention && <><button className="button quiet" data-testid="queue-retry-verification" disabled={op.retrying || reviewPending} onClick={() => void run('retryQueueVerification')}><RefreshCw size={15} className={op.retrying ? 'spin' : ''} />{lang.retryVerification}</button><button className="button quiet stop-queue" data-testid="queue-review-stop" disabled={reviewPending} onClick={async () => { setReviewRequest(reviewPhase); if (!await run('reviewQueue')) setReviewRequest(null) }}>{reviewPending ? <LoaderCircle size={14} className="spin" /> : <X size={15} />}{reviewPending ? lang.stopRequesting : op.review?.recovered ? lang.keepPending : lang.stopAndReview}</button></>}
-            {!done && !attention && <button className="button quiet stop-queue" disabled={stopping} onClick={() => void requestStop()}>{stopping ? <LoaderCircle size={15} className="spin" /> : <X size={15} />}{stopping ? lang.stopRequesting : lang.stopQueue}</button>}
+            {!done && !attention && !scanning && <button className="button quiet stop-queue" disabled={stopping} onClick={() => void requestStop()}>{stopping ? <LoaderCircle size={15} className="spin" /> : <X size={15} />}{stopping ? lang.stopRequesting : lang.stopQueue}</button>}
             {!done && op.canCancelCurrent && <button className="button quiet" onClick={() => void run('cancelProgress')}>{lang.cancelCurrent}</button>}
             {done && !attention && <button className="button primary" onClick={() => void run('closeProgress')}><Check size={16} />{lang.close}</button>}
+            {done && !attention && op.canOpenSystemRestore && <button className="button quiet" onClick={() => void run('openSystemRestore')}><RotateCcw size={15} />{op.openSystemRestore}</button>}
           </div>
         </footer>
       </div>
@@ -1078,7 +1061,8 @@ function UninstallConfirmation({ items, lang, close, execute, children }: {
   items: AppItem[]; lang: any; close: () => void; execute: () => Promise<boolean>; children?: ReactNode
 }) {
   const [starting, setStarting] = useState(false)
-  return <div className="modal-backdrop"><div className="modal premium-confirm" role="dialog" aria-modal="true" aria-label={lang.confirmTitle}>
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
+  return <div className="modal-backdrop"><div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal premium-confirm" role="dialog" aria-modal="true" aria-label={lang.confirmTitle}>
     <ModalHeader closeLabel={lang.close} icon={<Trash2 />} title={lang.confirmTitle} close={starting ? undefined : close} />
     <div className="confirmation-summary"><strong>{lang.selectedCount}</strong><span>{items.length}</span></div>
     <div className="confirmation-apps">{items.map(app => <article className="confirmation-card" key={app.id}>
@@ -1098,6 +1082,7 @@ function UninstallConfirmation({ items, lang, close, execute, children }: {
 export function UnregisteredDialog({ review, lang, run }: { review: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
   const [consent, setConsent] = useState(false)
   const [pending, setPending] = useState(false)
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   const t = lang.unregistered
   const busy = pending || review.busy
   const deleted = review.state === 'Deleted', restored = review.state === 'Restored', incomplete = review.state === 'DeleteIncomplete'
@@ -1105,7 +1090,7 @@ export function UnregisteredDialog({ review, lang, run }: { review: any; lang: a
   const errorText = unregisteredErrorText(String(review.error || ''), lang === words.ar ? 'ar' : 'en') || t.error
   const action = async (op: string) => { setPending(true); try { await run(op, { planId: review.planId, acknowledged: consent, permanent: true }) } finally { setPending(false) } }
   return <div className="modal-backdrop high-layer" dir={lang === words.ar ? 'rtl' : 'ltr'}>
-    <div className="modal unregistered-modal" role="dialog" aria-modal="true" aria-label={t.title}>
+    <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal unregistered-modal" role="dialog" aria-modal="true" aria-label={t.title}>
       <ModalHeader title={t.title} icon={<Package />} closeLabel={lang.close} close={busy ? undefined : () => void run('closeUnregistered')} />
       <div className="unregistered-body">
         {['Scanning', 'Restoring', 'Deleting'].includes(review.state) ? <div className="unregistered-loading" role="status"><LoaderCircle className="spin" size={28} /><div><strong>{review.state === 'Restoring' ? t.restoring : review.state === 'Deleting' ? t.deleting : t.scanning}</strong>{review.state === 'Scanning' && <p>{t.scanningHint}</p>}{review.state === 'Deleting' && <p>{t.deletedFiles} <bdi dir="ltr">{review.deletedFiles || 0}/{review.deletionTotal || review.count || 0}</bdi></p>}</div></div> : <>
@@ -1137,46 +1122,89 @@ function Metric({ label, value, tone }: { label: string; value: number | string;
   return <div className={`metric ${tone || ''}`}><span>{label}</span><strong><bdi dir="ltr">{value}</bdi></strong></div>
 }
 
-function ResidualDialog({ residual, lang, labels, run }: { residual: any; lang: any; labels: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+function ResidualScanSummary({ residual, lang }: { residual: any; lang: any }) {
+  return <details className="residual-scan-summary">
+    <summary><ShieldCheck size={16} /><strong>{residual.foundSelectable ? lang.residualScanDetails : lang.residualNothingToDelete}</strong><ChevronDown size={14} /></summary>
+    <div className="residual-scan-summary-content">
+      <p>{lang.residualLocations} <bdi dir="ltr">{residual.scannedLocations}</bdi></p>
+      {residual.summary.map((group: any) => <section key={group.id}>
+        <strong><bdi dir="auto">{group.name}</bdi></strong>
+        <p>{group.status}</p>
+        {group.folder && <p>{group.folder}</p>}
+        {group.folder && group.location && <div><bdi dir="ltr">{group.location}</bdi></div>}
+        {group.informational?.length > 0 && <ul aria-label={lang.residualReviewOnly}>{group.informational.map((path: string) =>
+          <li key={path}><bdi dir="ltr">{path}</bdi> · {lang.residualReviewOnly}</li>)}</ul>}
+      </section>)}
+    </div>
+  </details>
+}
+
+function ResidualDialog({ residual, op, lang, labels, run }: { residual: any; op: any; lang: any; labels: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+  const [confirmation, setConfirmation] = useState<{ version: number; count: number; size: string } | null>(null)
+  const [pending, setPending] = useState(false)
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
+  const busy = pending || residual.cleaning
+  const items = residual.items || []
+  const eligible = items.filter((item: any) => item.canClean).length
+  const selected = items.filter((item: any) => item.canClean && item.selected).length
+  const reviewId = residual.reviewId
+  const act = async (action: string, payload = {}) => {
+    setPending(true)
+    try { return await run(action, { reviewId, ...payload }) }
+    finally { setPending(false) }
+  }
   return (
-    <div className="modal-backdrop top-layer">
-      <div className="modal residual-modal">
-        <ModalHeader closeLabel={lang.close} icon={<ShieldCheck />} title={lang.residualTitle} close={() => void run('skipResiduals')} />
-        <p className="modal-copy">{residual.message || lang.scanLeftovers}</p>
+    <div className="modal-backdrop top-layer" dir={lang === words.ar ? 'rtl' : 'ltr'}>
+      <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal residual-modal residual-review" role="dialog" aria-modal="true" aria-label={lang.residualTitle}>
+        <ModalHeader closeLabel={lang.close} icon={<ShieldCheck />} title={lang.residualTitle}
+          close={busy ? undefined : () => void act('skipResiduals')} />
+        <p className="modal-copy">{lang.residualReviewIntro}</p>
+        <div className="residual-queue-summary">
+          <span>{lang.successful} <bdi dir="ltr">{op.successful || 0}</bdi></span>
+          <span>{lang.failed} <bdi dir="ltr">{op.failed || 0}</bdi></span>
+          <span>{lang.skipped} <bdi dir="ltr">{op.skipped || 0}</bdi></span>
+          <span>{lang.residualLocations} <bdi dir="ltr">{residual.scannedLocations || 0}</bdi></span>
+        </div>
         <div className="residual-toolbar">
-          <span><bdi dir="ltr">{(residual.items || []).length}</bdi> {lang.results}</span>
+          <span>{lang.residualSelected} <bdi dir="ltr">{selected}/{eligible}</bdi> · <bdi dir="ltr">{residual.size || '0 B'}</bdi></span>
           <div>
-            <button disabled={residual.cleaning} onClick={() => void run('selectAllResiduals')}>{labels.selectAllLabel || 'Select All'}</button>
-            <button disabled={residual.cleaning} onClick={() => void run('deselectAllResiduals')}>{labels.deselectAllLabel || 'Deselect All'}</button>
+            <button className="button quiet" disabled={busy || Boolean(confirmation) || selected === eligible} onClick={() => void act('selectAllResiduals')}>{labels.selectAllLabel || lang.residualSelectAll}</button>
+            <button className="button quiet" disabled={busy || Boolean(confirmation) || !selected} onClick={() => void act('deselectAllResiduals')}>{labels.deselectAllLabel || lang.residualDeselectAll}</button>
           </div>
         </div>
-        <div className="residual-list">
-          {residual.items?.length ? (
-            residual.items.map((item: any) => (
+        <div className="residual-list" aria-label={lang.residualTitle}>
+          {(residual.groups || []).map((group: any) => <section key={group.app.id} className="residual-group">
+            <header><AppIcon app={group.app} variant="small" fallbackLabel={lang.iconUnavailable} />
+              <div><strong><bdi dir="auto">{group.app.name}</bdi></strong><small>{group.status}</small></div>
+              <bdi dir="ltr">{group.count}</bdi>
+            </header>
+            {items.slice(group.offset, group.offset + group.count).map((item: any) =>
               <label className={`residual-row ${!item.canClean ? 'informational' : ''}`} key={item.index}>
-                <input type="checkbox" checked={item.selected} disabled={!item.canClean || residual.cleaning} onChange={e => void run('selectResidual', { index: item.index, selected: e.target.checked })} />
-                <div className="residual-row-main">
-                  <strong><bdi dir="ltr">{item.path}</bdi></strong>
-                  <span>{item.type} · {item.confidence} · {item.reason}</span>
-                </div>
-                <span className="residual-size">{item.canClean ? item.size : lang.cannotClean}</span>
-              </label>
-            ))
-          ) : (
-            <div className="empty-inline"><BadgeCheck size={20} /> {lang.noLeftovers}</div>
-          )}
+                <input type="checkbox" checked={item.selected} disabled={!item.canClean || busy || Boolean(confirmation)}
+                  onChange={e => void act('selectResidual', { index: item.index, selected: e.target.checked })} />
+                <div className="residual-row-main"><strong><bdi dir="auto">{item.title}</bdi></strong>
+                  <span><bdi dir="ltr">{item.path}</bdi></span></div>
+                <span className="residual-size">{item.canClean ? <bdi dir="ltr">{item.size}</bdi> : lang.residualReviewOnly}</span>
+              </label>)}
+          </section>)}
         </div>
-        <div className="residual-safety">
-          <ShieldCheck size={16} />
-          <span>{lang.safety}</span>
-          <strong>{residual.size || '0 B'}</strong>
-        </div>
+        {confirmation && <div className="residual-confirmation" role="alert"><CircleAlert size={18} /><div>
+          <strong>{lang.residualDeleteConfirm}</strong>
+          <span>{lang.residualDeleteWarning} <bdi dir="ltr">{confirmation.count} · {confirmation.size}</bdi></span>
+        </div></div>}
         <div className="modal-actions">
-          <button className="button quiet" disabled={residual.cleaning} onClick={() => void run('skipResiduals')}>{lang.skip}</button>
-          <button className="button primary" disabled={!residual.items?.some((x: any) => x.canClean && x.selected) || residual.cleaning} onClick={() => void run('cleanResiduals')}>
-            {residual.cleaning ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />}
-            {lang.cleanup}
-          </button>
+          {confirmation ? <>
+            <button className="button quiet" disabled={busy} onClick={() => setConfirmation(null)}>{lang.residualBack}</button>
+            <button className="button residual-danger" disabled={busy} onClick={async () => {
+              await act('deleteReviewedResiduals', { selectionVersion: confirmation.version, confirmed: true })
+              setConfirmation(null)
+            }}>{busy ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}{lang.residualDeleteConfirm}</button>
+          </> : <>
+            <button className="button quiet" disabled={busy} onClick={() => void act('skipResiduals')}>{eligible ? lang.skip : lang.results}</button>
+            <button className="button residual-danger" disabled={!selected || busy} onClick={() => setConfirmation({ version: residual.selectionVersion, count: selected, size: residual.size })}>
+              <Trash2 size={15} />{lang.residualDeleteSelected}
+            </button>
+          </>}
         </div>
       </div>
     </div>
@@ -1185,6 +1213,13 @@ function ResidualDialog({ residual, lang, labels, run }: { residual: any; lang: 
 
 function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean>; onClear: () => void }) {
   const labels = page.labels || {}
+  const [changingPage, setChangingPage] = useState(false)
+  const [detailsRef, onDetailsKeyDown] = useFocusTrap<HTMLDivElement>(page.details?.outcome === 'QueueProtection')
+  const changePage = async (direction: 'newer' | 'older') => {
+    setChangingPage(true)
+    try { await run('changeHistoryPage', { direction, page: page.pageNumber }) }
+    finally { setChangingPage(false) }
+  }
   return (
     <div className="history-page">
       <header className="page-header">
@@ -1206,17 +1241,19 @@ function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: 
           <div>{lang.date}</div>
         </div>
         {(page.records || []).length ? (
-          <VirtualList items={page.records as HistoryItem[]} rowHeight={56} render={(item: HistoryItem) => (
+          <VirtualList key={page.records[0].id} items={page.records as HistoryItem[]} rowHeight={56} render={(item: HistoryItem) => (
             <div className="app-row history-row" data-outcome={item.outcome}>
               <div className="app-name-cell">
                 <AppIcon app={item} variant="small" />
                 <div className="app-name-meta">
-                  <strong title={item.name}><bdi dir="auto">{item.name}</bdi></strong>
-                  <span className="publisher-chip"><bdi dir="auto">{item.publisher}</bdi> · <bdi dir="ltr">{item.version}</bdi></span>
+                  {item.outcome === 'QueueProtection' ? <button className="button quiet" onClick={() => void run('openHistoryDetails', { id: item.id })}>{item.name}</button> : <>
+                    <strong title={item.name}><bdi dir="auto">{item.name}</bdi></strong>
+                    <span className="publisher-chip"><bdi dir="auto">{item.publisher}</bdi> · <bdi dir="ltr">{item.version}</bdi></span>
+                  </>}
                 </div>
               </div>
-              <div className="cell-dim">{item.installerType}</div>
-              <div className={historyOutcome(item, lang === words.ar ? 'ar' : 'en').tone} title={item.status}>{historyOutcome(item, lang === words.ar ? 'ar' : 'en').label}{historyOutcome(item, lang === words.ar ? 'ar' : 'en').showExit && item.exitCode != null && <bdi dir="ltr"> ({item.exitCode})</bdi>}</div>
+              <div className="cell-dim">{item.outcome === 'QueueProtection' ? page.restorePointLabel : item.installerType}</div>
+              {item.outcome === 'QueueProtection' ? <div className="history-residual" title={item.status}>{item.status}</div> : <div className={historyOutcome(item, lang === words.ar ? 'ar' : 'en').tone} title={item.status}>{historyOutcome(item, lang === words.ar ? 'ar' : 'en').label}{historyOutcome(item, lang === words.ar ? 'ar' : 'en').showExit && item.exitCode != null && <bdi dir="ltr"> ({item.exitCode})</bdi>}</div>}
               <div className="history-residual" title={item.residualStatus}>{item.residualStatus}</div>
               <div className="history-timestamp" title={item.date}><bdi dir="ltr">{historyTimestamp(item.date).date}</bdi><bdi dir="ltr">{historyTimestamp(item.date).time}</bdi></div>
             </div>
@@ -1227,15 +1264,35 @@ function HistoryPage({ page, lang, run, onClear }: { page: any; lang: any; run: 
             <strong>{lang.noHistoryRecords}</strong>
           </div>
         )}
+        {page.records?.length > 0 && page.range && (
+          <nav className="history-pagination" aria-label={lang.historyPagination}>
+            <span aria-live="polite">{lang.historyShowing} <bdi dir="ltr">{page.range}</bdi></span>
+            <div className="history-pagination-actions">
+              <button className="button quiet" disabled={changingPage || !page.hasNewerPage} onClick={() => void changePage('newer')}>{lang.historyNewerPage}</button>
+              <button className="button quiet" disabled={changingPage || !page.hasOlderPage} onClick={() => void changePage('older')}>{lang.historyOlderPage}</button>
+            </div>
+          </nav>
+        )}
       </section>
+      {page.details?.outcome === 'QueueProtection' && <div className="modal-backdrop">
+        <div ref={detailsRef} onKeyDown={onDetailsKeyDown} tabIndex={-1} className="modal settings-modal" role="dialog" aria-modal="true" aria-label={page.details.name}>
+          <ModalHeader closeLabel={lang.close} icon={<History />} title={page.details.name} close={() => void run('closeHistoryDetails')} />
+          <div className="setting-block protection-details">
+            <h3>{page.restorePointLabel}</h3><p>{page.details.status}</p>
+            <h3>{page.registryBackupLabel}</h3><p>{page.details.residualStatus}</p>
+            <p className="protection-evidence" dir="auto">{page.details.notes}</p>
+          </div>
+        </div>
+      </div>}
     </div>
   )
 }
 
 function SettingsDialog({ state, lang, run }: { state: State; lang: any; run: (op: string, payload?: Record<string, unknown>) => Promise<boolean> }) {
+  const [dialogRef, onDialogKeyDown] = useFocusTrap<HTMLDivElement>(true)
   return (
     <div className="modal-backdrop">
-      <div className="modal settings-modal">
+      <div ref={dialogRef} onKeyDown={onDialogKeyDown} tabIndex={-1} className="modal settings-modal" role="dialog" aria-modal="true" aria-label={lang.settings}>
         <ModalHeader closeLabel={lang.close} icon={<Settings />} title={lang.settings} close={() => void run('closeSettings')} />
         <div className="setting-block">
           <h3>{lang.appearance}</h3>
@@ -1247,24 +1304,16 @@ function SettingsDialog({ state, lang, run }: { state: State; lang: any; run: (o
             </div>
           </div>
         </div>
+        {state.queueProtectionSettings && <div className="setting-block">
+          <label className="protection-option">
+            <input type="checkbox" checked={state.queueProtectionSettings.enabled} onChange={event => void run('setQueueProtection', { enabled: event.currentTarget.checked })} />
+            {state.queueProtectionSettings.label}
+          </label>
+          <p className="subtitle">{state.queueProtectionSettings.hint}</p>
+        </div>}
         <div className="modal-actions">
           <button className="button quiet" onClick={() => void run('openProductWebsite')}><ExternalLink size={14} />{lang.productWebsite}</button>
           <button className="button primary" onClick={() => void run('closeSettings')}>{lang.close}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ConfirmDialog({ title, body, confirm, cancel, onCancel, onConfirm }: { title: string; body: string; confirm: string; cancel: string; onCancel: () => void; onConfirm: () => void }) {
-  return (
-    <div className="modal-backdrop top-layer">
-      <div className="modal confirm-modal">
-        <ModalHeader closeLabel={cancel} icon={<CircleAlert />} title={title} close={onCancel} />
-        <p className="modal-copy">{body}</p>
-        <div className="modal-actions">
-          <button className="button quiet" onClick={onCancel}>{cancel}</button>
-          <button className="button danger" onClick={onConfirm}><Trash2 size={14} />{confirm}</button>
         </div>
       </div>
     </div>

@@ -6,8 +6,9 @@ public enum BatchItemState { Succeeded, Failed, Skipped, NeedsAttention, Cancell
 public enum BatchQueueState { Running, Succeeded, PartialFailure, CriticalFailure, Stopped, NeedsUserAttention, CompletedWithSkips }
 
 public sealed record BatchItemResult(InstalledApp App, BatchItemState State, string Message, int? ExitCode = null, string FailureCode = "");
-public sealed record BatchRunResult(IReadOnlyList<BatchItemResult> Items, bool Stopped, bool CriticalFailure)
+public sealed record BatchRunResult(IReadOnlyList<BatchItemResult> Items, bool Stopped, string? CriticalError = null)
 {
+    public bool CriticalFailure => CriticalError is not null;
     public int Processed => Items.Count(i => i.State != BatchItemState.Skipped);
     public int Successful => Items.Count(i => i.State == BatchItemState.Succeeded);
     public int Failed => Items.Count(i => i.State == BatchItemState.Failed);
@@ -42,36 +43,33 @@ public static class BatchUninstallCoordinator
         try
         {
         var results = new List<BatchItemResult>(queue.Count);
-        var critical = false;
         for (var index = 0; index < queue.Count; index++)
         {
             if (stopAfterCurrent())
             {
                 for (var rest = index; rest < queue.Count; rest++)
                     results.Add(new(queue[rest], BatchItemState.Skipped, "Skipped after stop request."));
-                return new(results, true, critical);
+                return new(results, true);
             }
             var app = queue[index];
             try
             {
                 var result = await execute(app);
-                var itemState = Classify(result);
-                results.Add(new(app, itemState,
-                    result.StatusMessage + (string.IsNullOrWhiteSpace(result.Error) ? "" : $" — {result.Error}"), itemState == BatchItemState.Skipped || !result.ExitObserved ? null : result.ExitCode,
-                    result.FailureCode == "None" ? "" : result.FailureCode));
+                var item = ToItemResult(app, result);
+                results.Add(item);
 
-                if (itemState == BatchItemState.Cancelled)
+                if (item.State == BatchItemState.Cancelled)
                 {
                     for (var rest = index + 1; rest < queue.Count; rest++)
                         results.Add(new(queue[rest], BatchItemState.Skipped, "Not started after cancellation."));
-                    return new(results, true, critical);
+                    return new(results, true);
                 }
 
-                if (itemState == BatchItemState.NeedsAttention)
+                if (item.State == BatchItemState.NeedsAttention)
                 {
                     for (var rest = index + 1; rest < queue.Count; rest++)
                         results.Add(new(queue[rest], BatchItemState.Skipped, "Not started; the previous uninstall needs verification."));
-                    return new(results, false, critical);
+                    return new(results, false);
                 }
                 // A completed, vendor-declared refusal is a per-application
                 // failure. Other explicitly confirmed items may continue.
@@ -81,41 +79,44 @@ public static class BatchUninstallCoordinator
                 {
                     for (var rest = index + 1; rest < queue.Count; rest++)
                         results.Add(new(queue[rest], BatchItemState.Skipped, "Not started after a completed uninstaller left its registration present."));
-                    return new(results, true, critical);
+                    return new(results, true);
                 }
             }
             catch (BatchHistoryWriteException ex)
             {
-                results.Add(new(ex.App, Classify(ex.EngineResult),
-                    ex.EngineResult.StatusMessage + (string.IsNullOrWhiteSpace(ex.EngineResult.Error) ? "" : $" — {ex.EngineResult.Error}") + " — History write failed.", ex.EngineResult.ExitObserved ? ex.EngineResult.ExitCode : null,
-                    ex.EngineResult.FailureCode == "None" ? "" : ex.EngineResult.FailureCode));
+                var item = ToItemResult(ex.App, ex.EngineResult);
+                results.Add(item with { Message = item.Message + " — History write failed." });
                 for (var rest = index + 1; rest < queue.Count; rest++)
                     results.Add(new(queue[rest], BatchItemState.Skipped, "Not started after a critical history error."));
-                return new(results, false, true);
+                return new(results, false, ex.Message);
             }
             catch (Exception ex)
             {
                 results.Add(new(app, BatchItemState.Failed, ex.Message));
-                critical = true;
                 for (var rest = index + 1; rest < queue.Count; rest++)
                     results.Add(new(queue[rest], BatchItemState.Skipped, "Not started after a critical queue error."));
-                return new(results, false, true);
+                return new(results, false, ex.Message);
             }
 
             if (stopAfterCurrent() && index + 1 < queue.Count)
             {
                 for (var rest = index + 1; rest < queue.Count; rest++)
                     results.Add(new(queue[rest], BatchItemState.Skipped, "Skipped after stop request."));
-                return new(results, true, critical);
+                return new(results, true);
             }
         }
-        return new(results, false, critical);
+        return new(results, false);
         }
         finally
         {
             ExecutionLock.Release();
         }
     }
+
+    internal static BatchItemResult ToItemResult(InstalledApp app, UninstallService.UninstallResult result) =>
+        new(app, Classify(result),
+            string.IsNullOrWhiteSpace(result.Error) ? result.StatusMessage : $"{result.StatusMessage} — {result.Error}",
+            result.ObservedExitCode, result.DiagnosticCode);
 
     public static BatchItemState Classify(UninstallService.UninstallResult result) =>
         // Cancellation is identified by its own failure code. A raw exit value such as

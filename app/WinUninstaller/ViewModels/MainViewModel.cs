@@ -36,6 +36,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _reduceMotion;
 
+    [ObservableProperty] private bool _protectBeforeUninstall;
+    public string ProtectionSettingLabel => UiStrings.Get(LanguageCode, "protectionSetting");
+    public string ProtectionSettingHint => UiStrings.Get(LanguageCode, "protectionHint");
+
     public FlowDirection LayoutDirection => LanguageCode == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
     public string AppSectionTitle => UiStrings.Get(LanguageCode, "apps");
     public string AllAppsLabel => UiStrings.Get(LanguageCode, "allApps");
@@ -65,7 +69,8 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(SettingsTitle)); OnPropertyChanged(nameof(LanguageLabel));
         OnPropertyChanged(nameof(ManagementSubtitle)); OnPropertyChanged(nameof(AuditLogsLabel));
         OnPropertyChanged(nameof(ReviewBeforeCleanupLabel)); OnPropertyChanged(nameof(PotentialLeftoversHint)); OnPropertyChanged(nameof(CloseLabel));
-        ShellUninstallContextMenuService.Register(value);
+        OnPropertyChanged(nameof(ProtectionSettingLabel)); OnPropertyChanged(nameof(ProtectionSettingHint));
+        if (_registerExplorer) ShellUninstallContextMenuService.Register(value);
         SavePreferences();
     }
 
@@ -75,18 +80,27 @@ public partial class MainViewModel : ObservableObject
         SavePreferences();
     }
 
+    partial void OnProtectBeforeUninstallChanged(bool value)
+    {
+        _appList.ProtectBeforeUninstall = value;
+        SavePreferences();
+    }
+
     public AppListViewModel AppList => _appList;
     public HistoryViewModel History => _history;
 
-    public MainViewModel(AppListViewModel appList, HistoryViewModel history, ResidualScanService residuals)
+    public MainViewModel(AppListViewModel appList, HistoryViewModel history, ResidualScanService residuals, string? isolatedProfile = null)
     {
         _appList = appList;
         _history = history;
         _residuals = residuals;
+        _registerExplorer = isolatedProfile is null;
+        _preferencesPath = Path.Combine(isolatedProfile ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller"), "settings.json");
         _currentViewModel = appList;
         LoadPreferences();
         _appList.ReduceMotion = ReduceMotion;
-        ShellUninstallContextMenuService.Register(LanguageCode);
+        if (_registerExplorer) ShellUninstallContextMenuService.Register(LanguageCode);
     }
 
     [RelayCommand]
@@ -95,18 +109,19 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     public void CloseSettings() => IsSettingsOpen = false;
 
-    private string PreferencesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WinUninstaller", "settings.json");
+    private readonly bool _registerExplorer;
+    private readonly string _preferencesPath;
 
     private void LoadPreferences()
     {
         _loadingPreferences = true;
         try
         {
-            if (!File.Exists(PreferencesPath)) return;
-            var values = ReadPreferences(PreferencesPath);
+            if (!File.Exists(_preferencesPath)) return;
+            var values = ReadPreferences(_preferencesPath);
             LanguageCode = values.Language;
             ReduceMotion = values.ReduceMotion;
+            ProtectBeforeUninstall = values.ProtectBeforeUninstall;
         }
         catch { /* Invalid preferences fall back to English defaults. */ }
         finally { _loadingPreferences = false; }
@@ -115,18 +130,18 @@ public partial class MainViewModel : ObservableObject
     private void SavePreferences()
     {
         if (_loadingPreferences) return;
-        var temporary = PreferencesPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var temporary = _preferencesPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new { language = LanguageCode, reduceMotion = ReduceMotion }));
-            File.Move(temporary, PreferencesPath, overwrite: true);
+            Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new { language = LanguageCode, reduceMotion = ReduceMotion, protectBeforeUninstall = ProtectBeforeUninstall }));
+            File.Move(temporary, _preferencesPath, overwrite: true);
         }
         catch { /* A read-only profile must not prevent use of the app. */ }
         finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch { } }
     }
 
-    internal static (string Language, bool ReduceMotion) ReadPreferences(string path)
+    internal static (string Language, bool ReduceMotion, bool ProtectBeforeUninstall) ReadPreferences(string path)
     {
         using var input = File.OpenRead(path);
         if (input.Length > 16_384) throw new JsonException("Preferences are too large.");
@@ -137,7 +152,8 @@ public partial class MainViewModel : ObservableObject
         var language = values.TryGetValue("language", out var lang) ? lang.GetString() : "en";
         if (language is not ("en" or "ar")) throw new JsonException("Unsupported language.");
         var motion = values.TryGetValue("reduceMotion", out var value) && value.GetBoolean();
-        return (language, motion);
+        var protection = values.TryGetValue("protectBeforeUninstall", out var protect) && protect.GetBoolean();
+        return (language, motion, protection);
     }
 
     [RelayCommand]
@@ -157,6 +173,20 @@ public partial class MainViewModel : ObservableObject
         if (_appList.IsUnregisteredBackup(picker.FileName))
         { await _appList.RestoreUnregisteredAsync(picker.FileName); return; }
         await _appList.RestoreResidualBackupAsync(picker.FileName);
+    }
+
+    internal async Task ReviewPendingDeletionAsync()
+    {
+        _appList.RequireMaintenanceIdle();
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WinUninstaller", "PendingRemoval");
+        var picker = new OpenFileDialog
+        {
+            Title = UiStrings.Get(LanguageCode, "pendingDeletionPickerTitle"),
+            InitialDirectory = directory,
+            Filter = UiStrings.Get(LanguageCode, "restorePickerFilter")
+        };
+        if (picker.ShowDialog() == true) await _appList.ReviewPendingDeletionAsync(picker.FileName);
     }
 
     [RelayCommand]

@@ -1,4 +1,11 @@
-param([switch]$SkipDependencyRestore)
+param(
+    [switch]$SkipDependencyRestore,
+    [string]$SignerScript = '',
+    [string]$SigningPublisher = '',
+    [string]$OutputDir = (Join-Path $PSScriptRoot 'dist'),
+    [string]$PayloadDir = (Join-Path $PSScriptRoot 'dist\app'),
+    [string]$OutputName = 'Uninstaller77-Setup'
+)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -9,8 +16,10 @@ try {
         try { & npm ci; if ($LASTEXITCODE) { throw 'npm dependency restore failed.' } }
         finally { Pop-Location }
     }
-    & (Join-Path $PSScriptRoot 'installer\Build-Release.ps1')
+    & (Join-Path $PSScriptRoot 'installer\Build-Release.ps1') -SignerScript $SignerScript -SigningPublisher $SigningPublisher `
+        -OutputDir $OutputDir -PayloadDir $PayloadDir -OutputName $OutputName
     if ($LASTEXITCODE) { throw 'Release build failed.' }
-    & (Join-Path $PSScriptRoot 'tests\ReleaseIdentity.Tests.ps1')
-    Write-Output ('Installer: ' + (Join-Path $PSScriptRoot 'dist\Uninstaller77-Setup.exe'))
+    $setup = Join-Path $OutputDir ($OutputName + '.exe')
+    & (Join-Path $PSScriptRoot 'tests\ReleaseIdentity.Tests.ps1') -PayloadDirectory $PayloadDir -Setup $setup
+    Write-Output ('Installer: ' + $setup)
 } finally { Pop-Location }

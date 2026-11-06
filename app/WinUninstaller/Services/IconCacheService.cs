@@ -364,7 +364,7 @@ public class IconCacheService
 
     private static string? ParseExeFromString(string s)
     {
-        var (exe, _) = UninstallService.SplitCommand(s);
+        var (exe, _) = RegisteredUninstallCommand.SplitCommand(s);
         return exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : null;
     }
 

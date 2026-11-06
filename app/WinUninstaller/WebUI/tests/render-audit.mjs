@@ -3,6 +3,7 @@ import { createServer } from 'vite'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 const server = await createServer({ server: { middlewareMode: true }, plugins: [{
   name: 'audit-components', enforce: 'pre', transform(code, id) {
     if (id.replaceAll('\\', '/').endsWith('/src/App.tsx'))
@@ -15,6 +16,16 @@ const render = (Component, props) => renderToStaticMarkup(React.createElement(Co
 const check = (name, test) => { test(); passed++; console.log('PASS ' + name) }
 try {
   const ui = await server.ssrLoadModule('/src/App.tsx')
+  const boundaryModule = await server.ssrLoadModule('/src/ErrorBoundary.tsx')
+  check('Render failure boundary exposes a keyboard action and bilingual alert surface', () => {
+    const Boundary = boundaryModule.default
+    const boundary = new Boundary({ children: React.createElement('span', null, 'normal') })
+    boundary.state = Boundary.getDerivedStateFromError(new Error('owned render fixture'))
+    const html = render(() => boundary.render(), {})
+    assert.match(html, /role="alert"/)
+    assert.match(html, /type="button"/)
+    assert.ok(html.includes('Reload interface'))
+  })
   check('Arabic and English expose the same translation keys', () => {
     assert.deepEqual(Object.keys(ui.words.ar).sort(), Object.keys(ui.words.en).sort())
     assert.deepEqual(Object.keys(ui.words.ar.control).sort(), Object.keys(ui.words.en.control).sort())
@@ -22,6 +33,35 @@ try {
   })
   for (const language of ['ar', 'en']) {
     const lang = ui.words[language]
+    const protection = JSON.parse(readFileSync(new URL(`../../Resources/Strings.${language}.json`, import.meta.url), 'utf8').replace(/^\uFEFF/, ''))
+    check(language + ': queue protection settings show the opt-in and recovery limitation', () => {
+      const html = render(ui.SettingsDialog, { lang, run, state: { language, queueProtectionSettings: {
+        enabled: true, label: protection.protectionSetting, hint: protection.protectionHint } } })
+      assert.match(html, /type="checkbox"[^>]*checked=""/)
+      assert.ok(html.includes(protection.protectionHint))
+      assert.match(html, /role="dialog"/)
+      assert.match(html, /aria-modal="true"/)
+      assert.match(html, /tabindex="-1"/)
+    })
+    check(language + ': protection warns without changing the queue outcome and only offers the wizard after completion', () => {
+      const op = { total: 1, state: 'Succeeded', protectionWarning: protection.protectionWarning,
+        protectionStage: protection.protectionPreparing, canOpenSystemRestore: true, openSystemRestore: protection.protectionOpenSystemRestore }
+      const running = render(ui.ProgressDialog, { lang, run, op: { ...op, isRunning: true, preparingProtection: true } })
+      assert.ok(running.includes(protection.protectionPreparing))
+      assert.ok(!running.includes(protection.protectionOpenSystemRestore))
+      const done = render(ui.ProgressDialog, { lang, run, op: { ...op, isRunning: false } })
+      assert.ok(done.includes(protection.protectionWarning))
+      assert.ok(done.includes(protection.protectionOpenSystemRestore))
+      assert.match(done, /status-green/)
+    })
+    check(language + ': History separates the restore-point result from registry backup details', () => {
+      const record = { id: 1, outcome: 'QueueProtection', name: protection.outcomeQueueProtection, status: protection.protectionFailed,
+        date: '2026-01-01 01:02:03', residualStatus: protection.protectionExportCounts, notes: 'Owned fixture 0001.reg' }
+      const html = render(ui.HistoryPage, { lang, run, onClear: () => {}, page: { records: [record], details: record,
+        restorePointLabel: protection.protectionRestorePoint, registryBackupLabel: protection.protectionRegistryBackup } })
+      assert.ok(html.includes(record.status) && html.includes(record.notes) && html.includes(protection.protectionRegistryBackup))
+      assert.match(html, /data-outcome="QueueProtection"/)
+    })
     check(language + ': a peer already removed by the previous item is skipped, without a false failed row or successful removal', () => {
       const html=render(ui.ProgressDialog,{lang,run,op:{isRunning:false,state:'CompletedWithSkips',operationState:'Completed',app:{id:'peer',name:'Owned already-absent peer'},total:2,processed:1,failed:0,successful:1,skipped:1,results:[{},{}],queueItems:[{app:{id:'parent',name:'Owned parent'},state:'Completed'},{app:{id:'peer',name:'Owned already-absent peer'},state:'NotInstalled',message:'The installation registration is already absent.'}]}})
       assert.ok(html.includes(lang.stages.NotInstalled))
@@ -53,10 +93,36 @@ try {
       assert.doesNotMatch(html,/stop-queue/)
     })
     check(language + ': running residual maintenance freezes selection and duplicate cleanup actions', () => {
-      const html=render(ui.ResidualDialog,{lang,labels:{},run,residual:{cleaning:true,items:[{index:0,path:'C:\\Owned\\Fixture',canClean:true,selected:true}]}})
+      const html=render(ui.ResidualDialog,{lang,labels:{},run,op:{successful:1},residual:{cleaning:true,
+        groups:[{app:{id:'owned',name:'Owned fixture'},offset:0,count:1,status:lang.results}],
+        items:[{index:0,title:'Fixture.bin',path:'C:\\Owned\\Fixture.bin',canClean:true,selected:true}]}})
       assert.match(html,/type="checkbox"[^>]*disabled=""/)
-      assert.match(html,/class="button primary" disabled=""/)
+      assert.match(html,/class="button residual-danger" disabled=""/)
       assert.match(html,/class="button quiet" disabled=""/)
+      assert.match(html, /<bdi dir="ltr">C:\\Owned\\Fixture.bin<\/bdi>/)
+      assert.match(html, new RegExp(`dir="${language === 'ar' ? 'rtl' : 'ltr'}"`))
+      assert.ok(html.includes(lang.residualDeleteSelected) && !html.includes(lang.residualDeleteConfirm))
+    })
+    check(language + ': active queue is compact and leftover scanning shows only measured locations', () => {
+      const op = { isRunning:true,state:'Running',total:4,processed:1,results:[],queueItems:[] }
+      const running = render(ui.ProgressDialog, {lang,run,op})
+      assert.match(running, /is-compact/)
+      assert.match(running, /<details class="queue-list-section queue-disclosure">/)
+      assert.equal((running.match(/role="progressbar"/g) || []).length, 1)
+      assert.doesNotMatch(running, /batch-counters/)
+      const scanning = render(ui.ProgressDialog, {lang,run,op:{...op,operationState:'ScanningResiduals',residual:{scannedLocations:7}}})
+      assert.ok(scanning.includes(lang.residualLocations))
+      assert.match(scanning, /<bdi dir="ltr">7<\/bdi>/)
+      assert.doesNotMatch(scanning, /role="progressbar"|stop-queue/)
+    })
+    check(language + ': empty cleanup stays in queue results and exposes scan scope', () => {
+      const folder = protection.residualFolderNotRecorded
+      const html = render(ui.ProgressDialog, {lang, run, op:{isRunning:false,state:'Succeeded',total:1,processed:1,
+        successful:1,results:[],queueItems:[],residual:{foundSelectable:false,scannedLocations:7,
+          summary:[{id:'scope',name:'Owned scope fixture',status:lang.noLeftovers,folder}]}}})
+      assert.ok(html.includes(lang.residualNothingToDelete) && html.includes(folder))
+      assert.match(html, /<details class="residual-scan-summary">/)
+      assert.doesNotMatch(html, /residual-danger|residual-review/)
     })
     check(language + ': unregistered review requires explicit consent and isolates its exact LTR scope', () => {
       const html = render(ui.UnregisteredDialog, {lang,run,review:{state:'Review',planId:'owned-review',root:'C:\\Owned\\App',target:'C:\\Owned\\App\\Owned.exe',count:1,bytes:1024,files:[{path:'Owned.exe',bytes:1024}]}})
@@ -103,7 +169,8 @@ try {
     })
     check(language + ': support section is removed and working management tools remain', () => {
       const html = render(ui.ControlPage, { lang, run, page: { runtime: { appVersion: '1.1.10' }, sources: [{ source: 'HKCU 64-bit', accepted: 2, errors: 0, sourceErrors: 0, elapsedMs: 1, status: 'Completed' }] }, inventory: {}, scope: { title: '', search: '', count: 0, ready: false } })
-      assert.equal((html.match(/class="control-tool"/g) || []).length, 6)
+      assert.equal((html.match(/class="control-tool"/g) || []).length, 7)
+      assert.ok(html.includes(lang.pendingDeletionTitle))
       assert.doesNotMatch(html, /control-support|Support information|معلومات الدعم|Discovery diagnostics|تشخيص اكتشاف البرامج|Runtime information|بيئة التشغيل|HKCU 64-bit/)
       assert.doesNotMatch(html, /Force Uninstall|File Shredder|System Restore|Unavailable advanced tools|إزالة البرامج المستعصية|تمزيق الملفات|استعادة النظام|أدوات متقدمة غير متاحة|control-advanced/)
     })
@@ -242,6 +309,15 @@ try {
     })
     check(language + ': history empty state renders', () => {
       assert.match(render(ui.HistoryPage, { page: { records: [] }, lang, run, onClear: () => {} }), /empty-state/)
+    })
+    check(language + ': history shows the current range and disables the unavailable direction', () => {
+      const page = { records: [{ id: 100, name: 'Owned fixture', date: '2026-01-01 01:02:03' }],
+        pageNumber: 1, range: '1–100 / 350', hasOlderPage: true, hasNewerPage: false }
+      const html = render(ui.HistoryPage, { page, lang, run, onClear: () => {} })
+      assert.ok(html.includes(`aria-label="${lang.historyPagination}"`))
+      assert.match(html, /<bdi dir="ltr">1–100 \/ 350<\/bdi>/)
+      assert.match(html, new RegExp(`<button[^>]*disabled=""[^>]*>${lang.historyNewerPage}</button>`))
+      assert.match(html, new RegExp(`<button class="button quiet">${lang.historyOlderPage}</button>`))
     })
   }
   console.log(`RESULT ${passed} passed / 0 failed (SSR only; no screenshot/native resize claim)`)

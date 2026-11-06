@@ -13,7 +13,7 @@ The suite reads installed-program inventory but only uninstalls a unique HKCU fi
 Read-only real browser inventory:
 
 ```powershell
-.\tests\Engine.Tests\bin\Release\net8.0-windows\Uninstaller77.EngineTests.exe --browser-inventory _build/BROWSER_INVENTORY.json
+.\tests\Engine.Tests\bin\Release\net10.0-windows\Uninstaller77.EngineTests.exe --browser-inventory _build/BROWSER_INVENTORY.json
 ```
 
 The shipping EXE rejects obsolete --run-tests/--fixture-* switches; use this test project instead.

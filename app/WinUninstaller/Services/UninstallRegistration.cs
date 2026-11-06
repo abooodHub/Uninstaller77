@@ -23,4 +23,18 @@ internal static class UninstallRegistration
         }
         catch (Exception ex) { return new(Presence.Unknown, ex.GetType().Name + ": " + ex.Message); }
     }
+
+    internal static async Task<VerificationStatus> VerifyRemovalAsync(string path)
+    {
+        // Verify the exact uninstall identity, not arbitrary folder contents.
+        // Leftover detection belongs to the separate evidence-based residual scan.
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            await Task.Delay(500);
+            var observed = Read(path);
+            if (observed.State == UninstallRegistration.Presence.Unknown) return VerificationStatus.Unknown;
+            if (observed.State == UninstallRegistration.Presence.Absent) return VerificationStatus.VerifiedRemoved;
+        }
+        return VerificationStatus.StillPresent;
+    }
 }

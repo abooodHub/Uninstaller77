@@ -19,6 +19,7 @@ public sealed class UnregisteredAppService
     public sealed record DeletionResult(bool Complete, bool CanRetry, int DeletedFiles, long DeletedBytes, int RemainingFiles, int UnverifiedMissingFiles,
         string? PendingPath, string[] DeletedPaths, string[] Errors);
     public sealed record DeletionProgress(int DeletedFiles, int TotalFiles);
+    internal sealed record PendingDeletion(Plan Plan, DeletionResult Result);
     private sealed record Envelope(string Kind, string Body, string Signature);
     public const string ManifestKind = "UnregisteredApplicationV1";
     private const long MaxBytes = 4L * 1024 * 1024 * 1024;
@@ -123,23 +124,37 @@ public sealed class UnregisteredAppService
             var stored = ReadReceipt(plan.StoredReceipt);
             CheckRunning(SafeChild(stored.QuarantinePath, Path.GetRelativePath(stored.OriginalPath, stored.Target)));
             ct.ThrowIfCancellationRequested();
-            return DeleteStaged(plan.StoredReceipt, [], progress);
+            return DeleteStaged(plan.StoredReceipt, progress);
         }
         var staging = DeletionStore();
         var receipt = staging.Quarantine(plan, currentRegistrations, ct);
-        return staging.DeleteStaged(receipt, [], progress);
+        return staging.DeleteStaged(receipt, progress);
     }
 
-    public DeletionResult RetryPermanentDeletion(string planId, IReadOnlyList<string> verifiedDeletedPaths,
-        IProgress<DeletionProgress>? progress = null)
+    public DeletionResult RetryPermanentDeletion(Plan plan, IProgress<DeletionProgress>? progress = null)
     {
-        if (!Guid.TryParseExact(planId, "N", out _)) throw Error("InvalidReview");
-        var staging = DeletionStore();
-        return staging.DeleteStaged(Path.Combine(staging._store, planId + ".json"), verifiedDeletedPaths, progress);
+        if (!Guid.TryParseExact(plan.Id, "N", out _)) throw Error("InvalidReview");
+        var staging = plan.StoredReceipt is null ? DeletionStore() : StoreForReceipt(plan.StoredReceipt);
+        return staging.DeleteStaged(plan.StoredReceipt ?? Path.Combine(staging._store, plan.Id + ".json"), progress);
     }
 
-    public DeletionResult RetryPermanentDeletion(Plan plan, IReadOnlyList<string> verifiedDeletedPaths, IProgress<DeletionProgress>? progress = null) =>
-        plan.StoredReceipt is null ? RetryPermanentDeletion(plan.Id, verifiedDeletedPaths, progress) : DeleteStaged(plan.StoredReceipt, verifiedDeletedPaths, progress);
+    internal PendingDeletion ReviewPendingDeletion(string manifestPath)
+    {
+        var staging = StoreForReceipt(manifestPath);
+        var receipt = staging.ReadReceipt(manifestPath);
+        if (!Directory.Exists(receipt.QuarantinePath) || !File.Exists(manifestPath + ".deleting")) throw Error("InvalidReview");
+        var deleted = staging.ReadDeletedFiles(manifestPath, receipt);
+        var remaining = Snapshot(receipt.QuarantinePath, CancellationToken.None);
+        EnsureRemainingFiles(receipt, remaining, deleted);
+        var plan = new Plan(receipt.Id, receipt.Name, receipt.Target, receipt.QuarantinePath, receipt.Kind,
+            receipt.Files.Sum(file => file.Bytes), receipt.Fingerprint, Array.AsReadOnly(receipt.Files), manifestPath);
+        return new(plan, new(false, true, deleted.Count,
+            receipt.Files.Where(file => deleted.Contains(file.RelativePath)).Sum(file => file.Bytes), remaining.Length, 0,
+            receipt.QuarantinePath, deleted.ToArray(), []));
+    }
+
+    private UnregisteredAppService StoreForReceipt(string manifestPath) =>
+        Same(Path.GetDirectoryName(Full(manifestPath))!, _store) ? this : DeletionStore();
 
     private Plan PrepareStored(string originalTarget, IEnumerable<InstalledApp> registrations, CancellationToken ct)
     {
@@ -172,24 +187,25 @@ public sealed class UnregisteredAppService
     private UnregisteredAppService DeletionStore() => new(_profile,
         Path.Combine(Path.GetDirectoryName(_store)!, "PendingRemoval"), _application);
 
-    private DeletionResult DeleteStaged(string path, IReadOnlyList<string> verifiedDeletedPaths, IProgress<DeletionProgress>? progress)
+    private DeletionResult DeleteStaged(string path, IProgress<DeletionProgress>? progress)
     {
         var receipt = ReadReceipt(path);
-        var deleted = verifiedDeletedPaths.ToHashSet(StringComparer.Ordinal);
+        var deleted = ReadDeletedFiles(path, receipt);
         var expected = receipt.Files.ToDictionary(file => file.RelativePath, StringComparer.Ordinal);
-        if (deleted.Any(name => !expected.ContainsKey(name))) throw Error("InvalidReview");
         var errors = new List<string>();
         try
         {
             var remaining = Snapshot(receipt.QuarantinePath, CancellationToken.None);
-            if (remaining.Any(file => !expected.TryGetValue(file.RelativePath, out var original) || file != original || deleted.Contains(file.RelativePath)) ||
-                remaining.Length + deleted.Count != expected.Count) throw Error("ChangedScope");
+            EnsureRemainingFiles(receipt, remaining, deleted);
             // Restore must never treat a partially deleted deployment as a complete backup.
             NoReparse(path + ".deleting");
-            using (var marker = new FileStream(path + ".deleting", FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read)) { marker.Flush(true); }
+            using var marker = new FileStream(path + ".deleting", FileMode.Append, FileAccess.Write, FileShare.Read);
+            marker.Flush(true);
+            var integrityKey = Key(create: false);
             progress?.Report(new(deleted.Count, expected.Count));
-            foreach (var file in receipt.Files)
+            for (var index = 0; index < receipt.Files.Length; index++)
             {
+                var file = receipt.Files[index];
                 if (deleted.Contains(file.RelativePath)) continue;
                 var target = SafeChild(receipt.QuarantinePath, file.RelativePath);
                 NoReparse(target);
@@ -197,6 +213,8 @@ public sealed class UnregisteredAppService
                     if (stream.Length != file.Bytes || Convert.ToHexString(SHA256.HashData(stream)) != file.Sha256) throw Error("ChangedScope");
                 File.Delete(target);
                 if (File.Exists(target)) throw Error("DeletionUnconfirmed");
+                marker.Write(Encoding.UTF8.GetBytes(DeletionEntry(receipt, index, integrityKey) + "\n"));
+                marker.Flush(true);
                 deleted.Add(file.RelativePath);
                 progress?.Report(new(deleted.Count, expected.Count));
             }
@@ -221,6 +239,39 @@ public sealed class UnregisteredAppService
             deleted.Sum(name => expected[name].Bytes), present, present < 0 ? -1 : Math.Max(0, expected.Count - deleted.Count - present),
             complete ? null : Directory.Exists(receipt.QuarantinePath) ? receipt.QuarantinePath : receipt.OriginalPath,
             deleted.OrderBy(name => name, StringComparer.Ordinal).ToArray(), errors.ToArray());
+    }
+
+    private HashSet<string> ReadDeletedFiles(string manifestPath, Receipt receipt)
+    {
+        var marker = manifestPath + ".deleting";
+        NoReparse(marker);
+        var deleted = new HashSet<string>(StringComparer.Ordinal);
+        if (!File.Exists(marker)) return deleted;
+        if (new FileInfo(marker).Length > MaxFiles * 80L) throw Error("InvalidBackup");
+        var key = Key(create: false);
+        foreach (var line in File.ReadLines(marker))
+        {
+            var separator = line.IndexOf(':');
+            if (separator < 1 || !int.TryParse(line.AsSpan(0, separator), out var index) || index < 0 ||
+                index >= receipt.Files.Length || line != DeletionEntry(receipt, index, key) ||
+                !deleted.Add(receipt.Files[index].RelativePath))
+                throw Error("InvalidBackup");
+        }
+        return deleted;
+    }
+
+    private static string DeletionEntry(Receipt receipt, int index, byte[] key)
+    {
+        var entry = FormattableString.Invariant($"{index}:{receipt.Id}:{receipt.Fingerprint}");
+        return FormattableString.Invariant($"{index}:") + Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(entry)));
+    }
+
+    private static void EnsureRemainingFiles(Receipt receipt, Entry[] remaining, HashSet<string> deleted)
+    {
+        var expected = receipt.Files.ToDictionary(file => file.RelativePath, StringComparer.Ordinal);
+        if (remaining.Length + deleted.Count != expected.Count ||
+            remaining.Any(file => !expected.TryGetValue(file.RelativePath, out var original) || file != original || deleted.Contains(file.RelativePath)))
+            throw Error("ChangedScope");
     }
 
     public static string ReadAction(JsonElement payload, bool confirmation)
@@ -320,7 +371,7 @@ public sealed class UnregisteredAppService
         if (reader.ReadUInt32() != 0x00004550) Fail("UnsupportedExecutable");
     }
 
-    private static Entry[] Snapshot(string root, CancellationToken ct)
+    internal static Entry[] Snapshot(string root, CancellationToken ct)
     {
         NoReparse(root);
         var result = new List<Entry>(); var directories = new Stack<string>(); directories.Push(root); long bytes = 0; var nodes = 0;
@@ -355,7 +406,7 @@ public sealed class UnregisteredAppService
         }
     }
 
-    private static void MoveVerified(string source, string destination, string fingerprint)
+    internal static void MoveVerified(string source, string destination, string fingerprint)
     {
         NoReparse(source); NoReparse(Path.GetDirectoryName(destination)!);
         Directory.Move(source, destination);
@@ -387,7 +438,7 @@ public sealed class UnregisteredAppService
         if (!Within(full, root)) Fail("InvalidBackup");
         return full;
     }
-    private static string Fingerprint(IEnumerable<Entry> files) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(files))));
+    internal static string Fingerprint(IEnumerable<Entry> files) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(files))));
     private static string Full(string path)
     {
         if (!Path.IsPathFullyQualified(path)) throw Error("ProtectedScope");

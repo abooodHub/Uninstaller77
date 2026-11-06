@@ -409,10 +409,14 @@
                             <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl ItemsSource="{Binding ProgressLogs}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontFamily="Consolas, Cascadia Code, Courier New" FontSize="11" Foreground="{StaticResource FgOverlay}" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
                         </Border>
                         </Grid>
-                        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <StackPanel Grid.Row="4" Margin="0,14,0,0">
+                        <TextBlock Text="{Binding ProtectionWarning}" TextWrapping="Wrap" Foreground="{StaticResource FgOverlay}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button Content="{Binding StopAfterCurrentLabel}" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Command="{Binding StopBatchCommand}" Visibility="{Binding IsBatchRunning, Converter={StaticResource BoolToVis}}" IsEnabled="{Binding IsBatchQueue}"/>
                             <Button Content="{Binding CancelOperationLabel}" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Command="{Binding CancelProgressCommand}" Visibility="{Binding IsBatchQueue, Converter={StaticResource InverseBoolToVis}}"/>
                             <Button Content="{Binding CloseLabel}" Style="{StaticResource PrimaryButton}" Command="{Binding CloseProgressCommand}" Visibility="{Binding IsBatchRunning, Converter={StaticResource InverseBoolToVis}}"/>
+                            <Button Content="{Binding OpenSystemRestoreLabel}" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Command="{Binding OpenSystemRestoreCommand}" Visibility="{Binding CanOpenSystemRestore, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                         </StackPanel>
                     </Grid>
                 </Border>

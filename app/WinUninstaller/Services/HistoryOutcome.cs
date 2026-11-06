@@ -7,7 +7,7 @@ public static class HistoryOutcome
         if (success) return string.IsNullOrEmpty(recorded) || recorded == "Succeeded" ? "Succeeded" : "NeedsAttention";
         return recorded switch
         {
-            "Failed" or "Cancelled" or "NotStarted" or "NotInstalled" or "NeedsAttention" or "FilesQuarantined" or "FilesRestored" or "FilesDeleted" or "FileDeletionIncomplete" => recorded,
+            "Failed" or "Cancelled" or "NotStarted" or "NotInstalled" or "NeedsAttention" or "FilesQuarantined" or "FilesRestored" or "FilesDeleted" or "FileDeletionIncomplete" or "QueueProtection" => recorded,
             null or "" => "LegacyUnverified",
             _ => "NeedsAttention"
         };

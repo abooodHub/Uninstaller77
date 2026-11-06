@@ -1,8 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using WinUninstaller.Models;
 
 namespace WinUninstaller.Services;
@@ -31,6 +29,9 @@ public class UninstallService
     private static bool _pendingIsMsi;
     private static (string AppId, int ExitCode)? _completedEvidence;
     private static readonly MsixDeploymentService Msix = new();
+#if ENGINE_TESTS
+    internal Func<Task>? BeforeFinalRegistrationValidationAsync { get; set; }
+#endif
     // A completed process awaiting a registration recheck is evidence, not a live
     // execution. Keeping it in this barrier deadlocked every later explicit run.
     public static bool HasPendingOperation => _pendingProcess is not null || Msix.HasPendingOperation;
@@ -42,7 +43,11 @@ public class UninstallService
         string StatusMessage,
         string Error,
         string FailureCode = "None",
-        bool ExitObserved = false);
+        bool ExitObserved = false)
+    {
+        public int? ObservedExitCode => ExitObserved && FailureCode != "RegistrationAbsent" ? ExitCode : null;
+        public string DiagnosticCode => FailureCode == "None" ? "" : FailureCode;
+    }
 
     /// <summary>
     /// Executes the uninstallation for the specified application with proper elevation,
@@ -102,7 +107,8 @@ public class UninstallService
             {
                 state?.Report(UninstallOperationState.Launching);
                 var result = await Msix.RemoveAsync(app, _completionTimeout, ct, progress, state);
-                state?.Report(result.Success ? UninstallOperationState.Completed : result.Verification == VerificationStatus.Unknown
+                state?.Report(result.Success ? UninstallOperationState.Completed : result.FailureCode == "RegistrationAbsent"
+                    ? UninstallOperationState.NotInstalled : result.Verification == VerificationStatus.Unknown
                     ? UninstallOperationState.NeedsUserAttention : UninstallOperationState.Failed);
                 return result;
             }
@@ -116,56 +122,25 @@ public class UninstallService
                 if (before.State == UninstallRegistration.Presence.Unknown)
                     return new(false, -1, VerificationStatus.Unknown, "The current uninstall registration could not be verified.", before.Error, "RegistrationUnavailable");
             }
-            LaunchCommand command;
-            try { command = PrepareLaunch(app, preferQuiet); }
-            catch (LaunchValidationException ex)
+            RegisteredUninstallCommand.LaunchCommand command;
+            try { command = RegisteredUninstallCommand.PrepareLaunch(app, preferQuiet); }
+            catch (RegisteredUninstallCommand.LaunchValidationException ex)
             {
-                if (ex.Result.FailureCode == "MissingExecutable" && UninstallRegistration.Read(app.RegistryKeyPath).State == UninstallRegistration.Presence.Absent)
+                if (ex.FailureCode == "MissingExecutable" && UninstallRegistration.Read(app.RegistryKeyPath).State == UninstallRegistration.Presence.Absent)
                     return AlreadyAbsentResult();
-                return ex.Result;
+                return new(false, -1, VerificationStatus.StillPresent, ex.Message, ex.Detail, ex.FailureCode);
             }
             var exe = command.Executable;
             var args = command.Arguments;
             var isMsi = command.IsMsi;
-            var registration = UninstallRegistration.Read(app.RegistryKeyPath);
-            if (registration.State == UninstallRegistration.Presence.Absent)
-                return AlreadyAbsentResult();
-            if (registration.State == UninstallRegistration.Presence.Unknown)
-                return new(false, -1, VerificationStatus.Unknown, "The current uninstall registration could not be verified.",
-                    registration.Error, "RegistrationUnavailable");
-            InstalledApp? current;
-            try
-            {
-                current = RegistryDiscoveryService.ReadExactRegistration(app.RegistryKeyPath);
-                var fresh = current is null ? null : PrepareLaunch(current, preferQuiet);
-                if (fresh is null || fresh.IsMsi != command.IsMsi || !fresh.Executable.Equals(exe, StringComparison.OrdinalIgnoreCase) || fresh.Arguments != args)
-                    return new(false, -1, VerificationStatus.StillPresent, "The registered uninstall command changed after confirmation.",
-                        "No uninstaller was launched. Refresh the application list and review the current command.", "RegistrationChanged");
-            }
-            catch (Exception ex)
-            {
-                return new(false, -1, VerificationStatus.Unknown, "The current uninstall registration could not be verified.",
-                    ex.Message, "RegistrationUnavailable");
-            }
+            var validation = ValidateCurrentLaunch(app, command, preferQuiet, out var current);
+            if (validation is not null) return validation;
             const bool registrationWasPresent = true;
 
-            progress?.Report($"Launching uninstaller for {app.Name}...");
-
-            // Determine if elevation is required
-            bool requiresElevation = RequiresElevation(current!, exe);
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = exe,
-                Arguments = args,
-                UseShellExecute = requiresElevation,
-                Verb = requiresElevation ? "runas" : string.Empty,
-                WorkingDirectory = Path.GetDirectoryName(exe) ?? Environment.SystemDirectory
-            };
-
             int exitCode;
-            var launchedAt = DateTimeOffset.Now;
+            var launchedAt = DateTimeOffset.MinValue;
             var launchedProcessId = 0;
+            var requiresElevation = false;
             DesktopShortcutCleanupService.Snapshot? desktopSnapshot = null;
             UninstallerProcess? execution = null;
             try
@@ -173,7 +148,27 @@ public class UninstallService
                 ct.ThrowIfCancellationRequested();
                 desktopSnapshot = await Task.Run(() => _desktopShortcuts.Capture(current!));
                 ct.ThrowIfCancellationRequested();
+#if ENGINE_TESTS
+                if (BeforeFinalRegistrationValidationAsync is not null)
+                    await BeforeFinalRegistrationValidationAsync();
+#endif
+                // Capture is optional pre-launch housekeeping and may take time.
+                // Re-read the exact registration after it, immediately before
+                // CreateProcess or the independently validating elevated broker.
+                validation = ValidateCurrentLaunch(app, command, preferQuiet, out current);
+                if (validation is not null) return validation;
+                requiresElevation = RegisteredUninstallCommand.RequiresElevation(current!, command);
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exe,
+                    Arguments = args,
+                    UseShellExecute = requiresElevation,
+                    Verb = requiresElevation ? "runas" : string.Empty,
+                    WorkingDirectory = Path.GetDirectoryName(exe) ?? Environment.SystemDirectory
+                };
+                progress?.Report($"Launching uninstaller for {app.Name}...");
                 state?.Report(UninstallOperationState.Launching);
+                launchedAt = DateTimeOffset.Now;
                 execution = isMsi ? UninstallerProcess.Start(psi)
                     : await UninstallerProcess.StartRegisteredAsync(psi, app.RegistryKeyPath, preferQuiet, ct,
                         new(app.RegistryKeyPath, current!.Name, current.InstallLocation, exe));
@@ -246,7 +241,7 @@ public class UninstallService
             progress?.Report("Verifying uninstallation status in Windows Registry and file system...");
             state?.Report(UninstallOperationState.Verifying);
             var verification = registrationWasPresent
-                ? await VerifyUninstallAsync(app, CancellationToken.None)
+                ? await UninstallRegistration.VerifyRemovalAsync(app.RegistryKeyPath)
                 : VerificationStatus.Unknown;
 
             // The job/synchronous MSI boundary has completed. A retained
@@ -278,6 +273,33 @@ public class UninstallService
         }
     }
 
+    private static UninstallResult? ValidateCurrentLaunch(InstalledApp confirmed,
+        RegisteredUninstallCommand.LaunchCommand expected, bool preferQuiet, out InstalledApp? current)
+    {
+        current = null;
+        var registration = UninstallRegistration.Read(confirmed.RegistryKeyPath);
+        if (registration.State == UninstallRegistration.Presence.Absent) return AlreadyAbsentResult();
+        if (registration.State == UninstallRegistration.Presence.Unknown)
+            return new(false, -1, VerificationStatus.Unknown, "The current uninstall registration could not be verified.",
+                registration.Error, "RegistrationUnavailable");
+        try
+        {
+            current = RegistryDiscoveryService.ReadExactRegistration(confirmed.RegistryKeyPath);
+            var fresh = current is null ? null : RegisteredUninstallCommand.PrepareLaunch(current, preferQuiet);
+            if (fresh is null || fresh.IsMsi != expected.IsMsi ||
+                !fresh.Executable.Equals(expected.Executable, StringComparison.OrdinalIgnoreCase) || fresh.Arguments != expected.Arguments)
+                return new(false, -1, VerificationStatus.StillPresent, "The registered uninstall command changed after confirmation.",
+                    "No uninstaller was launched. Refresh the application list and review the current command.", "RegistrationChanged");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            current = null;
+            return new(false, -1, VerificationStatus.Unknown, "The current uninstall registration could not be verified.",
+                ex.Message, "RegistrationUnavailable");
+        }
+    }
+
     /// <summary>Read-only recheck; never relaunches an uninstaller.</summary>
     public async Task<UninstallResult> RetryVerificationAsync(InstalledApp app)
     {
@@ -289,7 +311,7 @@ public class UninstallService
             if (_pendingProcess is null && _completedEvidence?.AppId == app.Id)
             {
                 var evidence = _completedEvidence.Value;
-                var verified = await VerifyUninstallAsync(app, CancellationToken.None);
+                var verified = await UninstallRegistration.VerifyRemovalAsync(app.RegistryKeyPath);
                 if (verified is VerificationStatus.VerifiedRemoved or VerificationStatus.PartiallyRemoved)
                 {
                     _completedEvidence = null;
@@ -304,13 +326,13 @@ public class UninstallService
             // an earlier timeout/metadata restriction left the live job pending.
             // This never starts a second uninstaller or closes the browser.
             if (!_pendingIsMsi && observedExit == 0 && _pendingProcess.HasReliableTree && !_pendingProcess.IsRemovalBoundaryComplete)
-                await _pendingProcess.WaitAsync(TimeSpan.FromSeconds(4), null);
+                await _pendingProcess.WaitAsync(TimeSpan.FromSeconds(4), null, checkHandoffImmediately: true);
             if (!CanFinalizeObservedProcess(_pendingIsMsi, _pendingProcess.HasReliableTree,
                 _pendingProcess.HasReliableTree && _pendingProcess.IsRemovalBoundaryComplete, observedExit))
                 return IncompleteProcessResult(!_pendingProcess.HasReliableTree, observedExit);
             var code = observedExit!.Value;
             var verification = app.Source == "MSIX" ? (await MsixDeploymentService.QueryAsync(app.Id)).Verification
-                : _pendingRegistration ? await VerifyUninstallAsync(app, CancellationToken.None) : VerificationStatus.Unknown;
+                : _pendingRegistration ? await UninstallRegistration.VerifyRemovalAsync(app.RegistryKeyPath) : VerificationStatus.Unknown;
             _pendingProcess.Dispose(); _pendingProcess = null; _pendingApp = null;
             // Retain an observed successful exit if its registration has not
             // settled yet. Otherwise the next retry loses all process evidence.
@@ -400,168 +422,7 @@ public class UninstallService
         "No uninstaller was launched for this item. It was skipped because its exact registration is already absent.", "RegistrationAbsent");
 
     internal static string FormatResultEvidence(UninstallResult result) => string.Join("\n",
-        new[] { result.StatusMessage, result.FailureCode == "None" ? "" : result.FailureCode, result.Error, result.FailureCode == "RegistrationAbsent" || !result.ExitObserved ? "" : $"Exit code: {result.ExitCode}" }
+        new[] { result.StatusMessage, result.DiagnosticCode, result.Error, result.ObservedExitCode is int exitCode ? FormattableString.Invariant($"Exit code: {exitCode}") : "" }
             .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal));
 
-    internal sealed record LaunchCommand(string Executable, string Arguments, bool IsMsi);
-    internal sealed class LaunchValidationException(UninstallResult result) : InvalidOperationException(result.StatusMessage)
-    { public UninstallResult Result { get; } = result; }
-
-    // Shared by the desktop engine and its authenticated elevated worker. Both
-    // validate a current registration; the worker never trusts a UI-supplied path.
-    internal static LaunchCommand PrepareLaunch(InstalledApp app, bool preferQuiet)
-    {
-        var cmd = preferQuiet && app.HasQuietUninstall
-            ? !string.IsNullOrWhiteSpace(app.QuietUninstallString) ? app.QuietUninstallString : ConstructQuietCommand(app)
-            : !string.IsNullOrWhiteSpace(app.UninstallString) ? app.UninstallString : app.QuietUninstallString;
-        if (string.IsNullOrWhiteSpace(cmd))
-            throw new LaunchValidationException(new(false, -1, VerificationStatus.StillPresent,
-                "No uninstall command found.", $"No uninstall string found for '{app.Name}' in the Windows Registry."));
-        cmd = Environment.ExpandEnvironmentVariables(cmd);
-        var (exe, args) = SplitCommand(cmd);
-        if (!IsAllowedExecutable(exe))
-            throw new LaunchValidationException(new(false, -1, VerificationStatus.StillPresent,
-                "Unsupported uninstall command.", "Only direct executable uninstallers are launched."));
-        var isMsi = IsWindowsInstallerExecutable(exe);
-        if (isMsi)
-        {
-            var product = MsiProductOperand(args);
-            if (product is null) throw new LaunchValidationException(new(false, -1, VerificationStatus.StillPresent,
-                "Invalid MSI product code.", "The uninstall command has no valid MSI product code.", "InvalidMsiCommand"));
-            return new(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), $"/X {product} /norestart" + (preferQuiet ? " /qn" : ""), true);
-        }
-        if (!exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !Path.IsPathFullyQualified(exe) || !File.Exists(exe))
-            throw new LaunchValidationException(new(false, -1, VerificationStatus.StillPresent,
-                "Uninstaller executable was not found.", exe, "MissingExecutable"));
-        return new(exe, args, false);
-    }
-
-    internal static bool IsWindowsInstallerExecutable(string executable)
-    {
-        if (executable.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase) ||
-            executable.Equals("msiexec", StringComparison.OrdinalIgnoreCase)) return true;
-        if (!Path.IsPathFullyQualified(executable)) return false;
-        return new[] { Environment.SystemDirectory, Environment.GetFolderPath(Environment.SpecialFolder.SystemX86) }
-            .Where(directory => !string.IsNullOrWhiteSpace(directory))
-            .Any(directory => Path.GetFullPath(executable).Equals(Path.Combine(directory, "msiexec.exe"), StringComparison.OrdinalIgnoreCase));
-    }
-
-    // Bind identity to the /X or /I operand, never a GUID in a property or log path.
-    internal static string? MsiProductOperand(string arguments)
-    {
-        if (arguments.Length > 30000 || arguments.Contains('\0')) return null;
-        var pointer = CommandLineToArgv("msiexec.exe " + arguments, out var count);
-        if (pointer == IntPtr.Zero) return null;
-        try
-        {
-            string Token(int index) => Marshal.PtrToStringUni(Marshal.ReadIntPtr(pointer, index * IntPtr.Size)) ?? "";
-            string? product = null;
-            for (var index = 1; index < count; index++)
-            {
-                var token = Token(index);
-                string? operand = null;
-                if (token.Equals("/uninstall", StringComparison.OrdinalIgnoreCase))
-                    operand = ++index < count ? Token(index) : "";
-                else if (token.StartsWith("/x", StringComparison.OrdinalIgnoreCase) || token.StartsWith("/i", StringComparison.OrdinalIgnoreCase))
-                    operand = token.Length == 2 ? ++index < count ? Token(index) : "" : token[2..];
-                if (operand is null) continue;
-                if (product is not null || !Guid.TryParseExact(operand, "B", out _)) return null;
-                product = operand;
-            }
-            return product;
-        }
-        finally { FreeCommandLine(pointer); }
-    }
-
-    [DllImport("shell32.dll", EntryPoint = "CommandLineToArgvW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr CommandLineToArgv(string command, out int count);
-    [DllImport("kernel32.dll", EntryPoint = "LocalFree")]
-    private static extern IntPtr FreeCommandLine(IntPtr memory);
-
-    public static bool RequiresElevation(InstalledApp app, string exe) =>
-        app.RegistryHive == "HKLM" || app.InstallerType == InstallType.Msi ||
-        exe.Contains("Program Files", StringComparison.OrdinalIgnoreCase) ||
-        exe.Contains("System32", StringComparison.OrdinalIgnoreCase);
-
-    public static bool IsAllowedExecutable(string executable)
-    {
-        if (string.IsNullOrWhiteSpace(executable)) return false;
-        var name = Path.GetFileName(executable.Trim().Trim('"'));
-        if (name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
-            name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".vbs", StringComparison.OrdinalIgnoreCase) ||
-            name.EndsWith(".js", StringComparison.OrdinalIgnoreCase)) return false;
-        var stem = Path.GetFileNameWithoutExtension(name);
-        return !new[] { "cmd", "powershell", "pwsh", "wscript", "cscript", "mshta", "rundll32", "regsvr32" }
-            .Contains(stem, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static async Task<VerificationStatus> VerifyUninstallAsync(InstalledApp app, CancellationToken ct)
-    {
-        // Verify the exact uninstall identity, not arbitrary folder contents.
-        // Leftover detection belongs to the separate evidence-based residual scan.
-        for (int attempt = 0; attempt < 5; attempt++)
-        {
-            await Task.Delay(500, ct);
-            var observed = UninstallRegistration.Read(app.RegistryKeyPath);
-            if (observed.State == UninstallRegistration.Presence.Unknown) return VerificationStatus.Unknown;
-            if (observed.State == UninstallRegistration.Presence.Absent) return VerificationStatus.VerifiedRemoved;
-        }
-        return VerificationStatus.StillPresent;
-    }
-
-    private static string ConstructQuietCommand(InstalledApp app)
-    {
-        var (registeredExecutable, registeredArguments) = SplitCommand(Environment.ExpandEnvironmentVariables(app.UninstallString));
-        if (IsWindowsInstallerExecutable(registeredExecutable))
-        {
-            var product = MsiProductOperand(registeredArguments);
-            if (product is not null) return $"MsiExec.exe /X{product} /qn /norestart";
-        }
-        else if (app.InstallerType == InstallType.InnoSetup)
-        {
-            var (exe, _) = SplitCommand(app.UninstallString);
-            return $"\"{exe}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART";
-        }
-
-        return app.UninstallString;
-    }
-
-    public static (string exe, string args) SplitCommand(string cmd)
-    {
-        cmd = cmd.Trim();
-        if (string.IsNullOrWhiteSpace(cmd)) return (string.Empty, string.Empty);
-
-        // Quoted executable: "C:\Path\To\file.exe" /arg1 /arg2
-        if (cmd.StartsWith('"'))
-        {
-            var end = cmd.IndexOf('"', 1);
-            if (end > 0)
-                return (cmd[1..end].Trim(), cmd[(end + 1)..].Trim());
-        }
-
-        // Unquoted path with .exe; accept only an existing executable to avoid ambiguous parsing.
-        int exeIdx = cmd.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-        if (exeIdx > 0)
-        {
-            string candidateExe = cmd[..(exeIdx + 4)].Trim();
-            string candidateArgs = cmd[(exeIdx + 4)..].Trim();
-            if (File.Exists(candidateExe))
-            {
-                return (candidateExe, candidateArgs);
-            }
-        }
-
-        // Space separation is safe only for a known executable name (for example msiexec.exe).
-        var space = cmd.IndexOf(' ');
-        if (space > 0)
-        {
-            var token = cmd[..space].Trim();
-            if (token.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase) ||
-                token.Equals("msiexec", StringComparison.OrdinalIgnoreCase))
-                return (token, cmd[(space + 1)..].Trim());
-            return (string.Empty, string.Empty);
-        }
-
-        return (cmd, string.Empty);
-    }
 }

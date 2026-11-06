@@ -248,7 +248,9 @@ public sealed class AdvancedInstallMonitorService : IDisposable
     {
         try
         {
+#pragma warning disable SYSLIB0057 // No modern .NET API extracts an Authenticode signer from a PE file.
             using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+#pragma warning restore SYSLIB0057
             using var chain = new X509Chain(); chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             var valid = chain.Build(cert);
             return (valid ? "Signed; chain valid (revocation not checked)" : "Signed; chain could not be validated", cert.GetNameInfo(X509NameType.SimpleName, false));

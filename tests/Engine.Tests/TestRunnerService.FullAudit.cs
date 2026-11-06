@@ -92,7 +92,7 @@ public partial class TestRunnerService
             try { WinUninstaller.ViewModels.MainViewModel.ReadPreferences(file); throw new Exception("Invalid preference type was accepted."); }
             catch (InvalidOperationException) { }
             File.WriteAllText(file, "{\"language\":\"ar\",\"reduceMotion\":true}");
-            if (WinUninstaller.ViewModels.MainViewModel.ReadPreferences(file) != ("ar", true)) throw new Exception("Valid preferences failed.");
+            if (WinUninstaller.ViewModels.MainViewModel.ReadPreferences(file) != ("ar", true, false)) throw new Exception("Valid preferences failed.");
             return "The complete preference object is validated before any observable UI property is applied.";
         });
         await RunTest("Full audit: vendor dependency diagnosis requires the exact Riot attempt", results, logger, () =>

@@ -111,9 +111,12 @@ public partial class TestRunnerService
                 var originalMarker = File.ReadAllText(Path.Combine(fixture.Root, "browser.json"));
                 if (first.Success || !UninstallService.HasPendingOperation) throw new Exception("Early timeout did not preserve honest live review evidence.");
                 var retried = await engine.RetryVerificationAsync(fixture.App);
-                if (!retried.Success || retried.ExitCode != 0 || UninstallService.HasPendingOperation || ownedBrowser.HasExited ||
-                    File.ReadAllText(Path.Combine(fixture.Root, "browser.json")) != originalMarker)
-                    throw new Exception("Read-only retry remained stuck or relaunched/killed the owned browser fixture.");
+                var markerChanged = File.ReadAllText(Path.Combine(fixture.Root, "browser.json")) != originalMarker;
+                if (!retried.Success || retried.ExitCode != 0 || UninstallService.HasPendingOperation || ownedBrowser.HasExited || markerChanged)
+                    throw new Exception($"Read-only retry remained stuck or relaunched/killed the owned browser fixture. " +
+                        $"Success={retried.Success}; Exit={retried.ExitCode}; Verification={retried.Verification}; " +
+                        $"Failure={retried.FailureCode}; Pending={UninstallService.HasPendingOperation}; " +
+                        $"BrowserExited={ownedBrowser.HasExited}; MarkerChanged={markerChanged}.");
                 return "Initial 500ms timeout stayed unresolved. Read-only retry verified the same root exit and missing GUID registration while the same real browser PID remained alive; no new launch.";
             }
             finally

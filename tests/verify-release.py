@@ -5,7 +5,7 @@ from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--report-dir', type=Path, default=root / 'reports/PACKAGE_VERIFICATION')
+parser.add_argument('--report-dir', type=Path, default=root / '_build/package-verification')
 parser.add_argument('--payload-dir', type=Path, default=root / 'dist/app')
 parser.add_argument('--setup', type=Path, default=root / 'dist/Uninstaller77-Setup.exe')
 options = parser.parse_args()
@@ -20,6 +20,12 @@ def check(condition, name):
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 for file, key in [('Uninstaller77.exe','exeSHA256'),('Uninstaller77.dll','dllSHA256'),('wwwroot/index.html','indexSHA256')]:
     check(sha(payload / file) == manifest[key], 'Manifest hash: '+file)
+runtime = json.loads((payload/'Uninstaller77.runtimeconfig.json').read_text(encoding='utf-8'))['runtimeOptions']
+included_frameworks = {item['name']: item['version'] for item in runtime.get('includedFrameworks', [])}
+for framework in ('Microsoft.NETCore.App', 'Microsoft.WindowsDesktop.App'):
+    check(included_frameworks.get(framework) == manifest['desktopRuntimeVersion'], 'Bundled framework: '+framework)
+for filename in ('hostfxr.dll', 'coreclr.dll', 'PresentationFramework.dll'):
+    check((payload/filename).is_file(), 'Bundled runtime file: '+filename)
 ui_source = root / 'app/WinUninstaller/WebUI/dist'
 source_files = {str(p.relative_to(ui_source)).replace('\\','/'):sha(p) for p in ui_source.rglob('*') if p.is_file()}
 destination_files = {str(p.relative_to(payload/'wwwroot')).replace('\\','/'):sha(p) for p in (payload/'wwwroot').rglob('*') if p.is_file()}
@@ -31,7 +37,7 @@ check("connect-src 'none'" in index and "script-src 'self'" in index and "object
 deps = json.loads((payload/'Uninstaller77.deps.json').read_text(encoding='utf-8'))
 check('SQLitePCLRaw.bundle_e_sqlite3/3.0.5' in deps['libraries'], 'Corrected SQLite bundle is in the shipped dependency graph')
 check(not any(name.startswith('SQLitePCLRaw.lib.e_sqlite3/') for name in deps['libraries']), 'Old affected native package is absent from shipped dependency graph')
-tested_native = root/'tests/ProductIntegrity.Tests/bin/Release/net8.0-windows/runtimes/win-x64/native/e_sqlite3.dll'
+tested_native = root/'tests/ProductIntegrity.Tests/bin/Release/net10.0-windows/runtimes/win-x64/native/e_sqlite3.dll'
 shipped_native = payload/'e_sqlite3.dll'
 check(sha(tested_native) == sha(shipped_native), 'Shipped Windows SQLite bytes match the runtime-tested 3.53.4 library')
 check(all(path.name == 'win-x64' for path in (payload/'runtimes').iterdir()), 'Windows x64 publish excludes unrelated platform runtime trees')

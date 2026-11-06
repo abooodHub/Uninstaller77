@@ -1,9 +1,13 @@
 param(
     [switch]$Execute,
     [switch]$ReleaseFinalize,
-    [string]$ReportDirectory = ''
+    [switch]$DeleteArchive,
+    [string]$ReportDirectory = '',
+    [long]$RetainedHashLimitBytes = 536870912
 )
 $ErrorActionPreference = 'Stop'
+if ($RetainedHashLimitBytes -lt 0) { throw 'RetainedHashLimitBytes cannot be negative.' }
+if ($DeleteArchive -and !$ReleaseFinalize) { throw 'DeleteArchive requires ReleaseFinalize.' }
 $workspace = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
 $prefix = $workspace + '\'
 if (!$ReportDirectory) { $ReportDirectory = Join-Path $workspace ('_build\cleanup-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
@@ -54,9 +58,11 @@ if ($ReleaseFinalize) {
     foreach ($relative in @(
         'app\WinUninstaller\WebUI\node_modules',
         'tools\DriveDiagnostics\bin', 'tools\DriveDiagnostics\obj',
-        'dist\verified-drive-fix', 'dist\verified-patch', 'dist\DriveDiagnostics',
-        '_build\archive'
+        'dist\verified-drive-fix', 'dist\verified-patch', 'dist\DriveDiagnostics'
     )) { Add-Target $relative 'Reproducible dependencies or superseded release/diagnostic package' }
+    if ($DeleteArchive) {
+        Add-Target '_build\archive' 'Archived release packages explicitly selected for deletion'
+    }
 }
 $archive = Join-Path $workspace '_build\archive'
 $rollback = $null
@@ -135,7 +141,13 @@ foreach ($entry in $manifest) { [void]$deletedNames.Add((Join-Path $workspace $e
 # Hash retained sources, packages, fixtures and historical evidence before mutation.
 $retained = @(foreach ($file in $before) {
     if (!$deletedNames.Contains($file.FullName) -and !$file.FullName.StartsWith($ReportDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) {
-        [pscustomobject]@{Path=$file.FullName; Bytes=$file.Length; SHA256=(Get-FileHash -LiteralPath $file.FullName).Hash}
+        # Large VM/evidence images are immutable retained artifacts, not cleanup
+        # candidates. Reading tens of gigabytes only to delete bin/obj makes the
+        # safety pass impractical; retain exact metadata and hash normal files.
+        [pscustomobject]@{
+            Path=$file.FullName; Bytes=$file.Length; LastWriteTimeUtc=$file.LastWriteTimeUtc.Ticks
+            SHA256=$(if ($file.Length -le $RetainedHashLimitBytes) { (Get-FileHash -LiteralPath $file.FullName).Hash } else { '' })
+        }
     }
 })
 $retained | Export-Csv -LiteralPath (Join-Path $ReportDirectory 'RETAINED_HASHES.csv') -NoTypeInformation -Encoding UTF8
@@ -150,7 +162,10 @@ if ($Execute) {
         Remove-Item -LiteralPath $target.Path -Recurse -Force
     }
     foreach ($file in $retained) {
-        if (!(Test-Path -LiteralPath $file.Path) -or (Get-FileHash -LiteralPath $file.Path).Hash -ne $file.SHA256) { throw "Retained file changed: $($file.Path)" }
+        if (!(Test-Path -LiteralPath $file.Path)) { throw "Retained file disappeared: $($file.Path)" }
+        $current = Get-Item -LiteralPath $file.Path -Force
+        if ($current.Length -ne $file.Bytes -or $current.LastWriteTimeUtc.Ticks -ne $file.LastWriteTimeUtc) { throw "Retained file metadata changed: $($file.Path)" }
+        if ($file.SHA256 -and (Get-FileHash -LiteralPath $file.Path).Hash -ne $file.SHA256) { throw "Retained file content changed: $($file.Path)" }
     }
 }
 $after = @(Get-ChildItem -LiteralPath $workspace -Recurse -Force -File)
@@ -159,7 +174,9 @@ $summary = [ordered]@{
     Executed=[bool]$Execute; BeforeBytes=($before | Measure-Object Length -Sum).Sum;
     AfterBytes=($after | Measure-Object Length -Sum).Sum; CandidateBytes=[long]($manifest | Measure-Object Bytes -Sum).Sum;
     DeletedFiles=$(if ($Execute) { @($manifest).Count } else { 0 }); CandidateRoots=$targets.Count;
-    Rollback=$(if ($rollback) {$rollback.FullName} else {$null}); RetainedHashChecks=@($retained).Count;
+    Rollback=$(if ($rollback) {$rollback.FullName} else {$null});
+    RetainedHashChecks=@($retained | Where-Object SHA256).Count;
+    RetainedMetadataChecks=@($retained).Count;
     Reports=$ReportDirectory; Unit='Logical file bytes; not NTFS allocated clusters'; ArchivedBytes=0
     SkippedLockedRoots=@($skippedLocked.ToArray())
 }

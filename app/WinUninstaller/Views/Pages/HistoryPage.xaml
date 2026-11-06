@@ -9,6 +9,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- ===== HEADER ===== -->
@@ -74,6 +75,17 @@
         </Border>
 
         <!-- ===== CONTENT AREA ===== -->
+        <Border Grid.Row="3" Padding="16,8" Background="{StaticResource BgMantle}">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource GhostButton}" Content="{Binding NewerPageLabel}"
+                            IsEnabled="{Binding HasNewerPage}" Command="{Binding OpenNewerPageCommand}" Margin="0,0,8,0"/>
+                    <Button Style="{StaticResource GhostButton}" Content="{Binding OlderPageLabel}"
+                            IsEnabled="{Binding HasOlderPage}" Command="{Binding OpenOlderPageCommand}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding PageRange}" FlowDirection="LeftToRight" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
         <Grid Grid.Row="2">
             <!-- Empty State -->
             <StackPanel HorizontalAlignment="Center"
@@ -249,7 +261,7 @@
                                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedItem.InstallerType}" Foreground="{StaticResource AccentMauve}" Margin="0,2"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding ExitCodeLabel, StringFormat={}{0}:}" Foreground="{StaticResource FgOverlay}" Margin="0,2"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedItem.Record.ExitCode}" Margin="0,2"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedItem.Record.ObservedExitCode, TargetNullValue='—'}" Margin="0,2"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding ResidualCleanupLabel, StringFormat={}{0}:}" Foreground="{StaticResource FgOverlay}" Margin="0,2"/>
                                 <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedItem.ResidualStatus}" Foreground="{StaticResource AccentGreen}" Margin="0,2"/>

@@ -1,0 +1,18 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Uninstaller 77 Owned MSI $(var.Id)" Manufacturer="Uninstaller 77 Test Fixtures"
+           Version="1.0.0" Scope="perUser" ProductCode="$(var.ProductCode)" UpgradeCode="$(var.UpgradeCode)">
+    <MediaTemplate EmbedCab="yes" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="OwnedFixtureDirectory" Name="Uninstaller77_MsiFixture_$(var.Id)">
+        <Component Id="FixturePayload" Guid="$(var.ComponentCode)">
+          <File Id="OwnedPayload" Source="$(var.PayloadPath)" Name="ownership.txt" />
+          <RegistryValue Root="HKCU" Key="Software\Uninstaller77\Fixtures\$(var.Id)" Name="ProductCode"
+                         Type="string" Value="$(var.ProductCode)" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Fixture" Title="Owned fixture" Level="1">
+      <ComponentRef Id="FixturePayload" />
+    </Feature>
+  </Package>
+</Wix>

@@ -29,7 +29,7 @@ public class IconExtractionService
         uint nIcons,
         uint flags);
 
-    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    [DllImport("shell32.dll", EntryPoint = "ExtractIconExW", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int ExtractIconEx(
         string lpszFile, int nIconIndex,
         IntPtr[]? phiconLarge, IntPtr[]? phiconSmall, uint nIcons);

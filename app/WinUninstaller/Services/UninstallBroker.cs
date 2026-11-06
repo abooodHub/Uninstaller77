@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32.SafeHandles;
+using WinUninstaller.Models;
 
 namespace WinUninstaller.Services;
 
@@ -40,7 +41,9 @@ internal static class UninstallBroker
             var info = new ProcessStartInfo(Environment.ProcessPath!)
             { UseShellExecute = elevate, Verb = elevate ? "runas" : "", WorkingDirectory = AppContext.BaseDirectory, CreateNoWindow = !elevate };
             info.ArgumentList.Add(Switch); info.ArgumentList.Add(pipeName); info.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            var connection = pipe.WaitForConnectionAsync();
+            // Cancellation and the 30-second deadline are enforced by WaitAsync below.
+            // Starting the accept first avoids racing the elevated worker connection.
+            var connection = pipe.WaitForConnectionAsync(CancellationToken.None);
             cancellation.ThrowIfCancellationRequested();
             process = await Task.Run(() => Process.Start(info)) ?? throw new InvalidOperationException("The uninstall worker did not start.");
             await connection.WaitAsync(TimeSpan.FromSeconds(30), cancellation);
@@ -139,19 +142,16 @@ internal static class UninstallBroker
             return 2;
         await WriteAsync(pipe, new Message("Ready"), deadline.Token);
         var request = await ReadAsync<Request>(pipe, deadline.Token);
-        ProcessStartInfo launch;
-        try { launch = ValidateRequest(request); }
+        UninstallerProcess execution;
+        try
+        {
+            var (launch, identity) = ValidateRequest(request);
+            execution = UninstallerProcess.Start(launch, new(request.RegistryPath, identity.Name, identity.InstallLocation, launch.FileName));
+        }
         catch (Exception ex) { await WriteAsync(pipe, new Message("Rejected", Error: ex.Message), deadline.Token); return 2; }
 
         // Once a child may have run, no communication error permits another launch.
         // Keep the job alive and wait for every child even if the UI disconnects.
-        UninstallerProcess execution;
-        try
-        {
-            var identity = RegistryDiscoveryService.ReadExactRegistration(request.RegistryPath) ?? throw new InvalidDataException("Registration disappeared before launch.");
-            execution = UninstallerProcess.Start(launch, new(request.RegistryPath, identity.Name, identity.InstallLocation, launch.FileName));
-        }
-        catch (Exception ex) { await WriteAsync(pipe, new Message("Rejected", Error: ex.Message), deadline.Token); return 2; }
         using (execution)
         {
             await TryWriteAsync(pipe, new Message("Started", execution.Root.Id));
@@ -163,18 +163,18 @@ internal static class UninstallBroker
         }
     }
 
-    internal static ProcessStartInfo ValidateRequest(Request request)
+    internal static (ProcessStartInfo Launch, InstalledApp Registration) ValidateRequest(Request request)
     {
         if (!IsRegistrationPath(request.RegistryPath) || request.Executable.Length > 4096 || request.Arguments.Length > 16384)
             throw new InvalidDataException("Unsupported uninstall registration identity.");
         var current = RegistryDiscoveryService.ReadExactRegistration(request.RegistryPath);
         if (current is null) throw new InvalidDataException("The exact uninstall registration is no longer available.");
-        var prepared = UninstallService.PrepareLaunch(current, request.Quiet);
+        var prepared = RegisteredUninstallCommand.PrepareLaunch(current, request.Quiet);
         if (prepared.IsMsi || !prepared.Executable.Equals(request.Executable, StringComparison.OrdinalIgnoreCase) ||
             prepared.Arguments != request.Arguments)
             throw new InvalidDataException("The registered uninstall command changed after confirmation.");
-        return new ProcessStartInfo(prepared.Executable, prepared.Arguments)
-        { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(prepared.Executable)! };
+        return (new ProcessStartInfo(prepared.Executable, prepared.Arguments)
+        { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(prepared.Executable)! }, current);
     }
 
     internal static bool IsRegistrationPath(string? path)

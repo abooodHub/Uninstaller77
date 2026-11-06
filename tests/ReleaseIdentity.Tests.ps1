@@ -24,6 +24,23 @@ foreach($file in @((Join-Path $PayloadDirectory 'Uninstaller77.exe'),(Join-Path 
 Check (@(Get-ChildItem -LiteralPath $PayloadDirectory -File -Filter 'WinUninstaller*').Count -eq 0) 'No previous assembly names in runtime package'
 $manifest=Get-Content -LiteralPath (Join-Path $PayloadDirectory 'release-manifest.json') -Raw | ConvertFrom-Json
 Check ($manifest.version -eq $releaseVersion -and $manifest.fileVersion -eq $expectedVersion.ToString()) 'Manifest and product versions agree'
+$manifestFiles = @{
+    'Uninstaller77.exe' = $manifest.exeSHA256
+    'Uninstaller77.dll' = $manifest.dllSHA256
+    'wwwroot\index.html' = $manifest.indexSHA256
+}
+foreach ($entry in $manifestFiles.GetEnumerator()) {
+    $actual = (Get-FileHash -LiteralPath (Join-Path $PayloadDirectory $entry.Key) -Algorithm SHA256).Hash
+    Check ($entry.Value -match '^[A-Fa-f0-9]{64}$' -and $actual -eq $entry.Value) ('Manifest hash matches: ' + $entry.Key)
+}
+if ($manifest.sbomSHA256) {
+    $sbomPath = Join-Path $PayloadDirectory 'bom.cdx.json'
+    Check (Test-Path -LiteralPath $sbomPath -PathType Leaf) 'CycloneDX SBOM exists'
+    Check ((Get-FileHash -LiteralPath $sbomPath -Algorithm SHA256).Hash -eq $manifest.sbomSHA256) 'SBOM hash matches manifest'
+    $sbom = Get-Content -LiteralPath $sbomPath -Raw | ConvertFrom-Json
+    Check ($sbom.bomFormat -eq 'CycloneDX' -and $sbom.specVersion -match '^1\.') 'SBOM has a supported CycloneDX identity'
+    Check (@($sbom.components).Count -gt 0) 'SBOM contains release components'
+}
 $deps=Get-Content -LiteralPath (Join-Path $PayloadDirectory 'Uninstaller77.deps.json') -Raw | ConvertFrom-Json
 Check ($deps.libraries.PSObject.Properties.Name -contains "Uninstaller77/$releaseVersion") 'Runtime dependency graph names the assembly and declared version'
 $installer=Get-Content -LiteralPath (Join-Path $workspace 'installer\Uninstaller77.iss') -Raw

@@ -11,10 +11,10 @@ public class UninstallRecord
     public string UninstallDate { get; set; } = string.Empty;
     public string InstallerType { get; set; } = "StandardExe";
     public int ExitCode { get; set; }
-    // Old numeric sentinels remain stored for compatibility; display only an
-    // exact exit-evidence line, never infer a launched process from Outcome.
-    public int? ObservedExitCode => Notes.Split('\n').Any(line => line.TrimEnd('\r') ==
-        "Exit code: " + ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)) ? ExitCode : null;
+    // Legacy rows may only carry exit evidence in their notes.
+    public bool? ExitObserved { get; set; }
+    public int? ObservedExitCode => (ExitObserved ?? Notes.Split('\n').Any(line => line.TrimEnd('\r') ==
+        "Exit code: " + ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture))) ? ExitCode : null;
     public bool Success { get; set; }
     public string Outcome { get; set; } = "";
     public string ResidualStatus { get; set; } = "Not Scanned";

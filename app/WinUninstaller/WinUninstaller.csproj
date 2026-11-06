@@ -6,7 +6,7 @@
 
     <OutputType>WinExe</OutputType>
 
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
 
     <Nullable>enable</Nullable>
 
@@ -26,13 +26,13 @@
 
     <ApplicationIcon>Resources\Brand\Uninstaller77.ico</ApplicationIcon>
 
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
 
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
 
-    <FileVersion>1.0.1.0</FileVersion>
+    <FileVersion>1.0.3.0</FileVersion>
 
-    <InformationalVersion>1.0.1</InformationalVersion>
+    <InformationalVersion>1.0.3</InformationalVersion>
 
   </PropertyGroup>
 
@@ -41,6 +41,7 @@
     <Resource Include="Resources\Brand\Uninstaller77.ico" />
 
     <Compile Remove="Phase6Fixture\**\*.cs" />
+    <Compile Remove="Views\WebMainWindow.VisualQa.cs;Views\WebMainWindow.Phase11Qa.cs" Condition="'$(Configuration)' != 'Debug'" />
     <!-- Keep generated build output out of WPF temporary-project globs. -->
     <Compile Remove="**\obj\**\*.cs" />
     <Compile Remove="**\bin\**\*.cs" />
@@ -53,14 +54,14 @@
     <Content Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\licenses\*.txt" Link="Licenses\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
 
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
 
     <!-- Override the legacy native bundle; 2.x ships an affected SQLite build. -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
 
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
 
   </ItemGroup>
 

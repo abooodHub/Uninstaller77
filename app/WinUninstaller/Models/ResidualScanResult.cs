@@ -5,7 +5,10 @@ public enum ResidualScanState
     NotScanned, Scanning, CompletedNoFindings, CompletedWithFindings, Unsupported, Failed, Cancelled
 }
 
-public sealed record ResidualScanResult(ResidualScanState State, IReadOnlyList<ResidualItem> Items, string Error = "", int ScannedLocations = 0)
+public enum ResidualInstallFolderState { NotChecked, NotRecorded, Missing, Restricted, Checked }
+
+public sealed record ResidualScanResult(ResidualScanState State, IReadOnlyList<ResidualItem> Items, string Error = "", int ScannedLocations = 0,
+    ResidualInstallFolderState InstallFolder = ResidualInstallFolderState.NotChecked)
 {
     // Stored in the existing TEXT column; legacy text remains readable without rewriting history.
     public string StorageStatus => "ResidualScan:" + State;

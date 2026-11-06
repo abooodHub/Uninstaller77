@@ -133,3 +133,48 @@
 }
 @media(prefers-reduced-motion:reduce) { .queue-workspace *, .queue-workspace *::after { animation:none!important; transition:none!important; } }
 .reduce-motion .queue-workspace *, .reduce-motion .queue-workspace *::after { animation:none!important; transition:none!important; }
+
+.queue-workspace.is-compact { width:min(620px,100%); height:auto; }
+.queue-workspace.is-compact .queue-current { padding-block:12px; }
+.queue-workspace.is-compact .queue-disclosure { flex:none; }
+.queue-workspace.is-compact .queue-results { max-height:min(220px,30vh); }
+.queue-workspace .queue-disclosure:not([open]) { min-height:0; flex:none; }
+.queue-disclosure > summary { padding:7px 0; color:#c9d1dd; font-size:12px; cursor:pointer; list-style:none; }
+.queue-disclosure > summary::-webkit-details-marker { display:none; }
+.queue-disclosure:not([open]) > summary svg { transform:rotate(-90deg); }
+[dir="rtl"] .queue-disclosure:not([open]) > summary svg { transform:rotate(90deg); }
+.queue-scan-status { display:flex; align-items:center; gap:9px; margin-top:14px; color:#b8c3d4; font-size:12px; }
+.queue-scan-status svg { color:var(--status-color); }
+
+.modal.residual-review { width:min(850px,100%); max-height:calc(100dvh - 32px); background:#181a1f; }
+.residual-review .modal-copy { font-size:13px; line-height:1.55; }
+.residual-queue-summary { display:flex; flex-wrap:wrap; gap:6px 18px; margin:0 18px 14px; color:#aeb8c7; font-size:12px; }
+.residual-queue-summary bdi { margin-inline-start:4px; color:#e4e9f0; }
+.residual-review .residual-toolbar { gap:8px; flex-wrap:wrap; font-size:12px; }
+.residual-review .residual-toolbar .button { height:30px; padding-inline:10px; font-size:11px; }
+.residual-review .residual-list { min-height:64px; max-height:min(435px,54vh); flex:1 1 auto; overscroll-behavior:contain; }
+.residual-group > header { display:flex; align-items:center; gap:10px; padding:9px 12px; background:#22262d; }
+.residual-group > header > div:nth-child(2) { flex:1; min-width:0; }
+.residual-group > header strong, .residual-group > header small { display:block; overflow-wrap:anywhere; }
+.residual-group > header strong { color:#e5eaf1; font-size:13px; }
+.residual-group > header small, .residual-group > header > bdi { color:#a9b3c2; font-size:11px; }
+.residual-review .residual-row { min-height:47px; }
+.residual-review .residual-row:not(.informational):hover { background:#202630; }
+.residual-review .residual-row-main strong { max-width:none; font-family:inherit; font-size:12px; line-height:1.45; }
+.residual-review .residual-row-main span { white-space:normal; overflow-wrap:anywhere; color:#a0acbd; font-size:11px; line-height:1.45; }
+.residual-review .residual-size { font-size:11px; }
+.residual-review .modal-actions { flex-wrap:wrap; margin-top:12px; }
+.residual-review .button.residual-danger { background:#702b34; border:1px solid #a64b55; color:#fff; }
+.residual-review .button.residual-danger:not(:disabled):hover { background:#8a3640; }
+.residual-confirmation { display:flex; align-items:flex-start; gap:10px; margin:12px 18px 0; padding:10px 12px; background:#392127; border:1px solid #6f3740; border-radius:8px; color:#ffc4ca; font-size:12px; }
+.residual-confirmation svg { flex:none; }
+.residual-confirmation span { display:block; margin-top:3px; }
+.residual-scan-summary { flex:none; border:1px solid #ffffff12; border-radius:8px; background:#1b2027; }
+.residual-scan-summary > summary { display:flex; gap:9px; align-items:center; padding:10px 12px; list-style:none; cursor:pointer; color:#cad7e5; font-size:12px; }
+.residual-scan-summary > summary::-webkit-details-marker { display:none; }
+.residual-scan-summary > summary > svg:first-child { color:#75b4d1; }
+.residual-scan-summary > summary > svg:last-child { margin-inline-start:auto; }
+.residual-scan-summary-content { padding:0 12px 10px; color:#aeb8c7; font-size:11px; overflow-wrap:anywhere; }
+.residual-scan-summary-content section { border-top:1px solid #ffffff12; padding-top:8px; margin-top:8px; }
+.residual-scan-summary-content section strong { color:#e4e9f0; }
+.residual-scan-summary-content p { margin:4px 0; }

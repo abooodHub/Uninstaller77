@@ -202,6 +202,10 @@ const arabic: Record<string, string> = {
   'No uninstall command found.': 'لم يُعثر على أمر إزالة مسجل.',
   'Unsupported uninstall command.': 'أمر الإزالة غير مدعوم.', 'Only direct executable uninstallers are launched.': 'يُسمح بتشغيل ملفات أدوات الإزالة التنفيذية المباشرة فقط.',
   'Invalid MSI product code.': 'رمز منتج MSI غير صالح.', 'The uninstall command has no valid MSI product code.': 'لا يتضمن أمر الإزالة رمز منتج MSI صالحًا.',
+  'The MSI product code does not match this registration.': 'رمز منتج MSI لا يطابق تسجيل التطبيق.',
+  'No uninstaller was launched because the registered command points to a different MSI product.': 'لم تُشغَّل أداة إزالة لأن الأمر المسجّل يشير إلى منتج MSI مختلف.',
+  'The registered command contains an invalid null character.': 'يتضمن الأمر المسجّل محرفًا صفريًا غير صالح.',
+  'Windows marks this package as protected or a framework.': 'صنّف Windows هذه الحزمة على أنها محمية أو إطار عمل.',
   'Uninstaller executable was not found.': 'ملف أداة الإزالة المسجل غير موجود.', 'Failed to launch process.': 'تعذر تشغيل العملية.',
   'UAC Prompt was cancelled by user.': 'أُلغيت مطالبة صلاحيات المسؤول.', 'Administrative privileges were denied at the UAC prompt.': 'لم تُمنح صلاحيات المسؤول المطلوبة.',
   'Cancelled by user.': 'ألغى المستخدم العملية.', 'Uninstallation cancelled.': 'أُلغيت الإزالة.', 'Process launch error.': 'تعذر تشغيل أداة الإزالة.',
@@ -219,6 +223,9 @@ const arabic: Record<string, string> = {
   'Manifest or restore target is unsafe or already occupied.': 'ملف الاستعادة أو مسارها غير آمن، أو المسار مستخدم بالفعل.',
   'Restore parent is unavailable or is a reparse point.': 'مجلد الاستعادة غير متاح أو يشير إلى مسار آخر.',
   'Former install location; review contents and shared use before moving to quarantine.': 'مجلد التثبيت السابق؛ راجع محتوياته واستخدامه المشترك قبل نقله إلى الحجر.',
+  'The former install directory could not be verified for quarantine.': 'تعذّر التحقق من مجلد التثبيت السابق لنقله إلى الحجر.',
+  'The quarantine folder is redirected.': 'مجلد الحجر يشير إلى مسار آخر.',
+  'The reviewed directory changed. Scan again before moving it to quarantine.': 'تغيّر المجلد بعد المراجعة. أعد الفحص قبل نقله إلى الحجر.',
   'Name match only; ownership unverified. Informational, not eligible for cleanup.': 'تطابق في الاسم فقط؛ لم يتم التحقق من الملكية. للمراجعة ولا يمكن تنظيفه.',
   'Name match only; shared Registry data possible. Informational, not eligible for cleanup.': 'تطابق في الاسم فقط؛ قد تكون بيانات السجل مشتركة. للمراجعة ولا يمكن تنظيفها.',
   'Preparing scan': 'جارٍ تجهيز الفحص', 'Starting Deep Residual Scan...': 'جارٍ بدء فحص المخلفات…',
@@ -251,6 +258,7 @@ export function queueFailureReason(item: { state: string; message?: string }, la
 
 const failureCategories: Record<string, [string, string]> = {
   InvalidMsiCommand: ['Invalid Windows Installer command', 'أمر Windows Installer غير صالح'],
+  MsiProductMismatch: ['MSI product mismatch', 'عدم تطابق منتج MSI'],
   UacDenied: ['UAC denied', 'رفض UAC'],
   InsufficientPrivileges: ['Insufficient privileges', 'نقص الصلاحيات'],
   ElevationRequired: ['Insufficient privileges', 'نقص الصلاحيات'],
@@ -329,11 +337,11 @@ export function localizeState<T extends { language: string; appsPage: any; histo
     if (!item) return item
     const count = Number(item.cleanedItemsCount || 0)
     const size = (Number(item.cleanedSizeBytes || 0) / 1024 / 1024).toFixed(1)
-    const residualStatus = count > 0
+    const residualStatus = item.residualPermanent ?? (count > 0
       ? state.language === 'ar'
         ? `نُقل ${count === 1 ? 'عنصر واحد' : `${count} عناصر`} إلى الحجر (${size} م.ب)`
         : `${count} item${count === 1 ? '' : 's'} moved to quarantine (${size} MB)`
-      : residualScanStatusText(!item.success && item.residualStatus === 'Scanning...' ? 'Not scanned' : item.residualStatus || '', state.language, item.installerType)
+      : residualScanStatusText(!item.success && item.residualStatus === 'Scanning...' ? 'Not scanned' : item.residualStatus || '', state.language, item.installerType))
     return { ...item, installerType: t(item.installerType), residualStatus, notes: t(item.notes) }
   }
   const p = state.appsPage, op = p.operation || {}, residual = p.residual || {}, hp = state.historyPage

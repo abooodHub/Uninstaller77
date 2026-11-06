@@ -11,9 +11,13 @@ namespace WinUninstaller.ViewModels;
 public partial class HistoryViewModel : ObservableObject
 {
     private readonly DatabaseService _db;
-    private List<HistoryItemViewModel> _allRecords = [];
-
-    public bool UseWebUi { get; set; }
+    internal const int PageSize = 100;
+    private readonly Stack<long> _pageStarts = new();
+    private long _pageStart;
+    [ObservableProperty] private int _totalCount;
+    [ObservableProperty] private int _pageNumber = 1;
+    [ObservableProperty] private bool _hasOlderPage;
+    [ObservableProperty] private bool _hasNewerPage;
 
     [ObservableProperty]
     private ObservableCollection<HistoryItemViewModel> _records = [];
@@ -53,29 +57,68 @@ public partial class HistoryViewModel : ObservableObject
     public string RetainedIconLabel => UiStrings.Get(LanguageCode, "retainedIcon");
     public string ExecutionNotesLabel => UiStrings.Get(LanguageCode, "executionNotes");
     public string CloseLabel => UiStrings.Get(LanguageCode, "close");
+    public string OlderPageLabel => UiStrings.Get(LanguageCode, "historyOlderPage");
+    public string NewerPageLabel => UiStrings.Get(LanguageCode, "historyNewerPage");
+    public string PageRange => FormattableString.Invariant(
+        $"{(IsEmpty ? 0 : (PageNumber - 1) * PageSize + 1)}–{(PageNumber - 1) * PageSize + Records.Count} / {TotalCount}");
 
     partial void OnLanguageCodeChanged(string value)
     {
         foreach (var name in new[] { nameof(HistoryTitle), nameof(HistoryDescription), nameof(ShowTestRecordsLabel), nameof(RefreshLabel), nameof(MoreActionsLabel), nameof(ClearHistoryLabel), nameof(ApplicationLabel), nameof(InstallerTypeLabel), nameof(ResultLabel), nameof(ResidualStatusLabel), nameof(DateTimeLabel), nameof(ActionsLabel), nameof(NoHistoryLabel), nameof(HistoryHintLabel), nameof(DetailsActionLabel), nameof(UninstallDateLabel), nameof(ExitCodeLabel), nameof(ResidualCleanupLabel), nameof(RetainedIconLabel), nameof(ExecutionNotesLabel), nameof(CloseLabel) }) OnPropertyChanged(name);
-        foreach (var item in _allRecords) item.LanguageCode = value;
+        OnPropertyChanged(nameof(OlderPageLabel));
+        OnPropertyChanged(nameof(NewerPageLabel));
+        foreach (var item in Records) item.LanguageCode = value;
     }
 
-    partial void OnShowTestRecordsChanged(bool value) => ApplyRecordFilter();
+    partial void OnShowTestRecordsChanged(bool value) => LoadHistory();
+    partial void OnTotalCountChanged(int value) => OnPropertyChanged(nameof(PageRange));
 
     public HistoryViewModel(DatabaseService db) => _db = db;
 
     [RelayCommand]
     public void LoadHistory()
     {
-        _allRecords = _db.GetHistory().Select(r => new HistoryItemViewModel(r) { LanguageCode = LanguageCode }).ToList();
-        ApplyRecordFilter();
+        var page = _db.GetHistoryPage(ShowTestRecords, beforeId: null, PageSize + 1);
+        _pageStart = page.Count == 0 ? 0 : (long)page[0].Id + 1;
+        TotalCount = _db.CountHistory(ShowTestRecords, _pageStart);
+        _pageStarts.Clear();
+        ShowPage(page);
     }
 
-    private void ApplyRecordFilter()
+    public void RefreshCount() => TotalCount = _db.CountHistory(ShowTestRecords);
+
+    [RelayCommand]
+    public void OpenOlderPage()
     {
-        Records = new ObservableCollection<HistoryItemViewModel>(_allRecords
-            .Where(item => ShowTestRecords || !item.IsLegacyTestRecord));
+        if (!HasOlderPage || Records.Count == 0) return;
+        var beforeId = Records[^1].Record.Id;
+        var page = _db.GetHistoryPage(ShowTestRecords, beforeId, PageSize + 1);
+        if (page.Count == 0) { LoadHistory(); return; }
+        _pageStarts.Push(_pageStart);
+        _pageStart = beforeId;
+        ShowPage(page);
+    }
+
+    [RelayCommand]
+    public void OpenNewerPage()
+    {
+        if (!_pageStarts.TryPeek(out var beforeId)) return;
+        var page = _db.GetHistoryPage(ShowTestRecords, beforeId, PageSize + 1);
+        if (page.Count == 0) { LoadHistory(); return; }
+        _pageStart = _pageStarts.Pop();
+        ShowPage(page);
+    }
+
+    private void ShowPage(IReadOnlyList<UninstallRecord> page)
+    {
+        CloseDetails();
+        Records = new ObservableCollection<HistoryItemViewModel>(page.Take(PageSize)
+            .Select(record => new HistoryItemViewModel(record) { LanguageCode = LanguageCode }));
+        PageNumber = _pageStarts.Count + 1;
+        HasOlderPage = page.Count > PageSize;
+        HasNewerPage = _pageStarts.Count > 0;
         IsEmpty = Records.Count == 0;
+        OnPropertyChanged(nameof(PageRange));
     }
 
     [RelayCommand]
@@ -98,16 +141,14 @@ public partial class HistoryViewModel : ObservableObject
     {
         if (Records.Count == 0) return;
 
-        if (UseWebUi || MessageBox.Show(
+        if (MessageBox.Show(
                 UiStrings.Get(LanguageCode, "clearHistoryConfirm"),
                 UiStrings.Get(LanguageCode, "clearHistoryTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question) == MessageBoxResult.Yes)
         {
             _db.ClearHistory();
-            _allRecords.Clear();
-            Records.Clear();
-            IsEmpty = true;
+            LoadHistory();
         }
     }
 }
@@ -120,11 +161,16 @@ public partial class HistoryItemViewModel : ObservableObject
     private ImageSource? _icon;
 
     [ObservableProperty] private string _languageCode = "en";
-    partial void OnLanguageCodeChanged(string value) => OnPropertyChanged(nameof(StatusText));
+    partial void OnLanguageCodeChanged(string value)
+    {
+        OnPropertyChanged(nameof(StatusText)); OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(ResidualStatus)); OnPropertyChanged(nameof(Notes));
+    }
 
     public HistoryItemViewModel(UninstallRecord record)
     {
         Record = record;
+        if (record.Outcome == "QueueProtection") Protection = QueueProtectionReport.Read(record.Notes);
 
         // Load cached icon from disk if available, or generate avatar
         if (!string.IsNullOrEmpty(record.CachedIconPath))
@@ -148,20 +194,25 @@ public partial class HistoryItemViewModel : ObservableObject
         }
     }
 
-    public string Name => Record.AppName;
+    internal QueueProtectionReport? Protection { get; }
+    public string Name => Protection is null ? Record.AppName : UiStrings.Get(LanguageCode, "outcomeQueueProtection");
     public string Publisher => string.IsNullOrEmpty(Record.Publisher) ? UiStrings.Get(LanguageCode, "unknownPublisher") : Record.Publisher;
     public string Version => string.IsNullOrEmpty(Record.Version) ? "—" : Record.Version;
     public string Date => Record.UninstallDate;
     public string InstallerType => Record.InstallerType;
     public bool Success => Record.Success;
-    public bool IsLegacyTestRecord => Record.AppId == "DiagnosticTestApp" ||
+    public bool IsLegacyTestRecord => Record.AppId.Equals("DiagnosticTestApp", StringComparison.OrdinalIgnoreCase) ||
         Record.AppId.StartsWith("TestApp_", StringComparison.OrdinalIgnoreCase) ||
-        Record.AppName == "Automated SQLite Test App";
-    public string ResidualStatus => Record.ResidualStatus.StartsWith("ResidualScan:", StringComparison.Ordinal)
+        Record.AppName.Equals("Automated SQLite Test App", StringComparison.OrdinalIgnoreCase);
+    public string ResidualStatus => Protection is not null ? Protection.RegistryText(LanguageCode)
+        : Record.ResidualStatus.StartsWith("ResidualPermanent:", StringComparison.Ordinal)
+        ? string.Format(UiStrings.Get(LanguageCode, "residualHistoryDeleted"), Record.CleanedItemsCount)
+        : Record.ResidualStatus.StartsWith("ResidualScan:", StringComparison.Ordinal)
         ? UiStrings.Get(LanguageCode, Record.ResidualStatus == "ResidualScan:Scanning" ? "residualScanIncomplete" : "residualScan" + Record.ResidualStatus[13..])
         : Record.InstallerType.Contains("MSIX", StringComparison.OrdinalIgnoreCase) && Record.ResidualStatus.StartsWith("Clean", StringComparison.OrdinalIgnoreCase)
             ? UiStrings.Get(LanguageCode, "residualScanUnsupported") : Record.ResidualStatus;
     public string OutcomeState => HistoryOutcome.Normalize(Record.Success, Record.Outcome);
-    public string StatusText => IsLegacyTestRecord ? UiStrings.Get(LanguageCode, "testRecord") : UiStrings.Get(LanguageCode, "outcome" + OutcomeState);
-    public string Notes => Record.Notes;
+    public string StatusText => Protection is not null ? Protection.RestoreText(LanguageCode)
+        : IsLegacyTestRecord ? UiStrings.Get(LanguageCode, "testRecord") : UiStrings.Get(LanguageCode, "outcome" + OutcomeState);
+    public string Notes => Protection?.Details(LanguageCode) ?? Record.Notes;
 }

@@ -9,6 +9,8 @@ app/WinUninstaller/wwwroot/
 *.user
 *.suo
 *.tsbuildinfo
+**/__pycache__/
+*.pyc
 # Local packages and private evidence
 /_build/
 /dist/

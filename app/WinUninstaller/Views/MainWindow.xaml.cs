@@ -26,7 +26,7 @@ public partial class MainWindow : Window
             try
             {
                 var dark = 1;
-                DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int));
+                _ = DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int));
             }
             catch { /* Older Windows versions keep their system title bar theme. */ }
         };

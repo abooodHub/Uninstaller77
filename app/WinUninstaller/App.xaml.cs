@@ -72,14 +72,27 @@ public partial class App : Application
             Console.Error.WriteLine("Tests and fixtures moved to tests/Engine.Tests. No test or uninstall was started.");
             Shutdown(2); return;
         }
+#if DEBUG
         var testRoot = args.Contains("--ui-attention-test") || args.Contains("--ui-phase11-test") || args.Contains("--ui-phase13-test")
             ? Path.Combine(Path.GetTempPath(), "WinUninstallerTests_" + Guid.NewGuid().ToString("N")) : null;
+#else
+        const string? testRoot = null;
+#endif
 
         var registry = new RegistryDiscoveryService();
         var extractor = new IconExtractionService();
         var iconCache = new IconCacheService(extractor,
             testRoot == null ? null : Path.Combine(testRoot, "IconCache"));
-        var db = new DatabaseService(testRoot == null ? null : Path.Combine(testRoot, "tests.db"));
+        DatabaseService db;
+        string? preservedDatabase;
+        try { db = DatabaseService.OpenWithRecovery(testRoot == null ? null : Path.Combine(testRoot, "tests.db"), out preservedDatabase); }
+        catch (Exception ex)
+        {
+            LogCrash("Database startup", ex);
+            MessageBox.Show(ex.Message, "Uninstaller 77", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
         var uninstaller = new UninstallService();
         var residualScanner = new ResidualScanService();
 
@@ -99,10 +112,13 @@ public partial class App : Application
             return;
         }
 
-        var isolatedUiTest = args.Contains("--ui-phase13-test");
         if (!shellUninstallShortcut)
         {
-            _desktopMutex = new Mutex(true, isolatedUiTest ? $@"Local\Uninstaller77.Phase13.{Environment.ProcessId}" : @"Local\Uninstaller77.Desktop", out var firstDesktopInstance);
+            var mutexName = @"Local\Uninstaller77.Desktop";
+#if DEBUG
+            if (args.Contains("--ui-phase13-test")) mutexName = $@"Local\Uninstaller77.Phase13.{Environment.ProcessId}";
+#endif
+            _desktopMutex = new Mutex(true, mutexName, out var firstDesktopInstance);
             if (!firstDesktopInstance)
             {
                 MessageBox.Show("Uninstaller 77 is already open. / Uninstaller 77 مفتوح بالفعل.", "Uninstaller 77");
@@ -111,8 +127,9 @@ public partial class App : Application
             Exit += (_, _) => { _desktopMutex.ReleaseMutex(); _desktopMutex.Dispose(); };
         }
         QueueJournal? fixtureJournal = null;
-        if (args.Contains("--ui-attention-test") || args.Contains("--ui-phase11-test"))
-            fixtureJournal = new QueueJournal(Path.Combine(testRoot!, "Queue"));
+#if DEBUG
+        if (testRoot is not null)
+            fixtureJournal = new QueueJournal(Path.Combine(testRoot, "Queue"));
         if (args.Contains("--ui-phase11-test"))
         {
             var recorded = DateTimeOffset.UtcNow.AddHours(-2);
@@ -122,9 +139,16 @@ public partial class App : Application
                 [new("phase11-operation-1", fixture, UninstallOperationState.AwaitingCompletion, recorded, null, "Recorded fixture evidence: completion was not established.", -3),
                  new("phase11-operation-2", new InstalledApp { Id = "Phase11_Not_Started", Name = "Phase11 waiting fixture", Source = "Fixture" }, UninstallOperationState.Idle, null, null)]));
         }
+#endif
         var appListVm = new AppListViewModel(registry, iconCache, db, uninstaller, residualScanner, fixtureJournal);
         var historyVm = new HistoryViewModel(db);
-        var mainVm = new MainViewModel(appListVm, historyVm, residualScanner);
+        var mainVm = new MainViewModel(appListVm, historyVm, residualScanner, testRoot);
+        if (preservedDatabase is not null)
+        {
+            LogStartup("Preserved unreadable history database: " + preservedDatabase);
+            appListVm.SetWebNotice(UiStrings.Get(mainVm.LanguageCode, "databaseRecovered"), true);
+        }
+#if DEBUG
         if (args.Contains("--ui-preview-queue-ar") || args.Contains("--ui-preview-grid") || args.Contains("--ui-preview-select") || args.Contains("--ui-preview-details"))
             mainVm.LanguageCode = "ar";
         else if (args.Contains("--ui-preview-english"))
@@ -134,6 +158,7 @@ public partial class App : Application
             mainVm.LanguageCode = "ar";
             mainVm.ReduceMotion = true;
         }
+#endif
 
         // Keep the WPF/XAML UI available with --legacy-ui until the WebView2 migration has
         // passed compatibility checks. The HTML host is the normal application entry point.
@@ -141,6 +166,7 @@ public partial class App : Application
             ? new Views.MainWindow { DataContext = mainVm }
             : new Views.WebMainWindow(mainVm);
         MainWindow = window;
+#if DEBUG
         // Reproducible visual QA uses the real desktop UI and real discovery data.
         // Only the three documented window sizes are accepted; no privileged action is enabled.
         var visualSize = args.FirstOrDefault(a => a.StartsWith("--visual-size=", StringComparison.Ordinal));
@@ -153,6 +179,7 @@ public partial class App : Application
             window.Left = 0;
             window.Top = 0;
         }
+#endif
         ShutdownMode = ShutdownMode.OnMainWindowClose;
 
         ConfigureWindowLifetime(window, appListVm);
@@ -160,18 +187,21 @@ public partial class App : Application
         window.Show();
         LogRuntime($"MainWindow shown; type={window.GetType().FullName}; handle={new System.Windows.Interop.WindowInteropHelper(window).Handle}; process={Environment.ProcessPath}");
 
+#if DEBUG
         // Explicit fixture mode contains no executable uninstall commands.
         if (args.Contains("--ui-attention-test"))
             _ = appListVm.ShowAttentionFixtureAsync();
         else if (args.Contains("--ui-preview-queue") || args.Contains("--ui-preview-queue-ar"))
             appListVm.ShowSyntheticQueuePreview();
         else
+#endif
         {
             if (shellUninstallShortcut)
                 _ = appListVm.PromptUninstallFromShortcutAsync(args[2]);
             else
                 _ = appListVm.LoadAppsAsync();
 
+#if DEBUG
             if (args.Contains("--ui-preview-select"))
             {
                 _ = Task.Run(async () =>
@@ -192,6 +222,7 @@ public partial class App : Application
                     });
                 });
             }
+#endif
         }
     }
 

@@ -101,7 +101,12 @@ internal static class PostUninstallBrowserHandoff
             using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (!VerifySignature(path, file.SafeFileHandle.DangerousGetHandle())) return null;
             var version = FileVersionInfo.GetVersionInfo(path);
+            // .NET has no non-obsolete API that extracts an Authenticode signer
+            // certificate from a PE file; X509CertificateLoader handles only
+            // certificate containers. Keep this suppression scoped to that call.
+#pragma warning disable SYSLIB0057
             using var signed = X509Certificate.CreateFromSignedFile(path);
+#pragma warning restore SYSLIB0057
             using var certificate = new X509Certificate2(signed);
             return new(Path.GetFileName(path), version.OriginalFilename ?? "", version.ProductName ?? "", certificate.GetNameInfo(X509NameType.SimpleName, false));
         }

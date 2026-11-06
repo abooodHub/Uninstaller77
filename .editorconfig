@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+# Reliability/security rules that are required even though the wider legacy
+# analyzer baseline is still being reduced incrementally.
+dotnet_diagnostic.CA1806.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+dotnet_diagnostic.CA2101.severity = warning

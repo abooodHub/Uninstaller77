@@ -122,6 +122,8 @@
                         <ComboBoxItem Content="English" Tag="en"/>
                         <ComboBoxItem Content="العربية" Tag="ar"/>
                     </ComboBox>
+                    <CheckBox Content="{Binding ProtectionSettingLabel}" IsChecked="{Binding ProtectBeforeUninstall}" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding ProtectionSettingHint}" TextWrapping="Wrap" Foreground="{StaticResource FgOverlay}" Margin="0,0,0,14"/>
 
                     <Button Content="{Binding CloseLabel}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" Padding="18,7" Command="{Binding CloseSettingsCommand}"/>
                 </StackPanel>

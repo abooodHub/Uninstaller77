@@ -102,13 +102,32 @@ public partial class AppListViewModel
         {
             using var lease = _journal.AcquireExecutionLease();
             if (QueueJournal.NeedsReview(_journal.Read())) throw new InvalidOperationException("UnregisteredApp:OperationBusy");
-            var knownDeleted = UnregisteredDeletion.DeletedPaths;
             UnregisteredState = "Deleting"; UnregisteredError = "";
             var progress = new DispatcherProgress<UnregisteredAppService.DeletionProgress>(_dispatcher, value => UnregisteredDeletedFiles = value.DeletedFiles);
-            UnregisteredDeletion = await Task.Run(() => _unregistered.RetryPermanentDeletion(UnregisteredPlan!, knownDeleted, progress));
+            UnregisteredDeletion = await Task.Run(() => _unregistered.RetryPermanentDeletion(UnregisteredPlan!, progress));
             FinishUnregisteredDeletion(UnregisteredPlan);
         }
         catch (Exception ex) { UnregisteredState = "DeleteIncomplete"; UnregisteredError = ex.Message; }
+        finally { IsUnregisteredBusy = false; }
+    }
+
+    public async Task ReviewPendingDeletionAsync(string path)
+    {
+        RequireUnregisteredIdle();
+        IsUnregisteredBusy = true;
+        try
+        {
+            using var lease = _journal.AcquireExecutionLease();
+            if (QueueJournal.NeedsReview(_journal.Read())) throw new InvalidOperationException("UnregisteredApp:OperationBusy");
+            var review = await Task.Run(() => _unregistered.ReviewPendingDeletion(path));
+            UnregisteredPlan = review.Plan;
+            UnregisteredIdentity = new InstalledApp { Id = review.Plan.Id, Name = review.Plan.Name, Source = "Unregistered" };
+            UnregisteredDeletion = review.Result;
+            UnregisteredDeletedFiles = review.Result.DeletedFiles;
+            UnregisteredError = "";
+            UnregisteredState = "DeleteIncomplete";
+            IsUnregisteredOpen = true;
+        }
         finally { IsUnregisteredBusy = false; }
     }
 
@@ -153,7 +172,7 @@ public partial class AppListViewModel
         {
             _db.AddRecord(new UninstallRecord { AppId = id, AppName = name, InstallerType = "Unregistered files",
                 CachedIconPath = UnregisteredIdentity?.Id == id ? UnregisteredIdentity.CachedIconPath : "",
-                Success = false, Outcome = outcome, ExitCode = 0, UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Success = false, Outcome = outcome, ExitCode = 0, ExitObserved = false, UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 ResidualStatus = "ResidualScan:NotScanned", Notes = notes });
             OnPropertyChanged(nameof(HistoryCount));
         }

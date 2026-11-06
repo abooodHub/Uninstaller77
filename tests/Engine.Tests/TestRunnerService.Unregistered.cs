@@ -199,7 +199,11 @@ public partial class TestRunnerService
                 Refused(() => new UnregisteredAppService(profile, Path.Combine(profile, "PendingRemoval"), AppContext.BaseDirectory).Restore(Path.Combine(profile, "PendingRemoval", plan.Id + ".json")), "PermanentDeletionStarted");
             }
             finally { locked?.Dispose(); }
-            var retry = service.RetryPermanentDeletion(plan.Id, deletion.DeletedPaths);
+            var reopened = Service(profile);
+            var review = reopened.ReviewPendingDeletion(Path.Combine(profile, "PendingRemoval", plan.Id + ".json"));
+            if (review.Result.DeletedFiles != 1 || review.Result.RemainingFiles != plan.Files.Count - 1)
+                throw new Exception("Durable deletion evidence was not recovered by a fresh service.");
+            var retry = reopened.RetryPermanentDeletion(review.Plan);
             if (!retry.Complete || retry.DeletedFiles != plan.Files.Count || retry.DeletedBytes != plan.Bytes || Directory.Exists(plan.Root)) throw new Exception("Remaining-file retry failed.");
             return "A real file lock caused partial deletion, not success; cumulative verified counts survived retry; partial backup restore was blocked.";
         });
@@ -222,7 +226,7 @@ public partial class TestRunnerService
             }));
             locked?.Dispose();
             File.Delete(Path.Combine(profile, "PendingRemoval", plan.Id, plan.Files[2].RelativePath)); // Owned fixture simulating another actor.
-            var retry = service.RetryPermanentDeletion(plan.Id, deletion.DeletedPaths);
+            var retry = service.RetryPermanentDeletion(plan);
             if (retry.Complete || retry.DeletedFiles != 1 || retry.UnverifiedMissingFiles != 1 || retry.RemainingFiles != plan.Files.Count - 2) throw new Exception("Unobserved removal became fabricated success.");
             return "External absence is separate from verified deletions; changed remaining scope is not purged.";
         });

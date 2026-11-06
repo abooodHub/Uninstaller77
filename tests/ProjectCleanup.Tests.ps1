@@ -57,7 +57,7 @@ try {
     $destination = Join-Path $fixture 'VMTestShare'
     $junction = Join-Path $fixture 'app\WinUninstaller\bin'
     New-Item -ItemType Junction -Path $junction -Target $destination | Out-Null
-    try { Expect-Rejection 'Junction candidates are rejected without touching the target' } finally { Remove-Item -LiteralPath $junction -Force }
+    try { Expect-Rejection 'Junction candidates are rejected without touching the target' } finally { [IO.Directory]::Delete($junction) }
     Check (Test-Path -LiteralPath $protected[2]) 'Junction target fixture remains intact'
 
     $caught = $false
@@ -69,9 +69,12 @@ try {
     $duplicate = Put 'dist\verified-drive-fix\app\owned.dll'
     $old = Put '_build\archive\before-drive-promotion-owned\app\old.dll'
     $finalized = (& $cleaner -ReleaseFinalize -Execute) | ConvertFrom-Json
-    Check (@($dependency,$cache,$launcher,$duplicate,$old | Where-Object {Test-Path -LiteralPath $_}).Count -eq 0) 'Release finalization removes complete duplicate packages and reproducible dependencies'
-    Check ($finalized.DeletedFiles -eq 5) 'Nested caches and npm script launchers are counted exactly once'
+    Check (@($dependency,$cache,$launcher,$duplicate | Where-Object {Test-Path -LiteralPath $_}).Count -eq 0) 'Release finalization removes complete duplicate packages and reproducible dependencies'
+    Check (Test-Path -LiteralPath $old) 'Release finalization preserves archives unless deletion is explicitly requested'
+    Check ($finalized.DeletedFiles -eq 4) 'Nested caches and npm script launchers are counted exactly once'
     Check (@($protected | Where-Object { !(Test-Path -LiteralPath $_) }).Count -eq 0) 'Release finalization preserves canonical runtime, installer, sources and historical fixtures'
+    $archiveDeletion = (& $cleaner -ReleaseFinalize -DeleteArchive -Execute) | ConvertFrom-Json
+    Check (!(Test-Path -LiteralPath $old) -and $archiveDeletion.DeletedFiles -eq 1) 'Archive deletion requires and honors a separate explicit option'
     Write-Output "RESULT: $passed passed, 0 failed"
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixture)

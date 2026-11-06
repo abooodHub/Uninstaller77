@@ -41,12 +41,14 @@ public partial class AppListViewModel
             if (generation != _scanGeneration) return;
             _discoveryMs = clock.ElapsedMilliseconds;
             _inventoryDiagnostics = discovery.LastDiagnostics;
-            if (_inventoryDiagnostics.All(source => source.Errors > 0 || source.SourceErrors > 0 || source.Cancelled || source.TimedOut))
+            var incomplete = _inventoryDiagnostics.Where(source => source.Errors > 0 || source.SourceErrors > 0 || source.Cancelled || source.TimedOut).ToArray();
+            if (apps.Count == 0 && _inventoryDiagnostics.Count == incomplete.Length)
                 throw new InvalidOperationException("All application discovery sources failed. See discovery diagnostics.");
             apps = InventoryIntegrity.CurrentRegistrations(apps);
             _allApps = apps; ObserveSelection(apps); ApplyFilterAndSort(); UpdateCounts();
             HasConfirmedInventory = true; InventoryRevision = generation;
-            InventoryState = apps.Count == 0 ? "Empty" : "Loaded";
+            InventoryError = string.Join(" · ", incomplete.Select(source => source.Source));
+            InventoryState = incomplete.Length > 0 ? "Partial" : apps.Count == 0 ? "Empty" : "Loaded";
             StatusText = string.Format(UiStrings.Get(LanguageCode, "foundAppsStatus"), apps.Count, RecentCount, LargeCount, StoreCount);
             OnPropertyChanged(nameof(HasConfirmedInventory)); OnPropertyChanged(nameof(DiscoveryDiagnostics));
             _ = LoadMeasuredIconsAsync(generation, token);
@@ -57,6 +59,7 @@ public partial class AppListViewModel
         {
             if (generation != _scanGeneration) return;
             InventoryState = "Failed"; InventoryError = ex.Message;
+            OnPropertyChanged(nameof(DiscoveryDiagnostics));
             StatusText = UiStrings.Get(LanguageCode, "discoveryError") + ": " + ex.Message;
         }
         finally { if (generation == _scanGeneration) IsLoading = false; }

@@ -10,7 +10,6 @@
     <!-- ============================================================ -->
     <conv:NullImageConverter x:Key="NullImageConverter"/>
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-    <conv:InverseBooleanConverter x:Key="InverseBool"/>
     <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
 
     <!-- ============================================================ -->
@@ -32,30 +31,6 @@
     <SolidColorBrush x:Key="AccentMauve" Color="#C7AEF5"/>
     <SolidColorBrush x:Key="AccentPeach" Color="#F2B994"/>
     <SolidColorBrush x:Key="AccentTeal"  Color="#7ED9D2"/>
-
-    <Style x:Key="MetricCard" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource BgSurface0}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BgSurface1}"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="12"/>
-        <Setter Property="Padding" Value="16,13"/>
-    </Style>
-    <Style x:Key="MetricLabel" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource AccentBlue}"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="FontSize" Value="10"/>
-    </Style>
-    <Style x:Key="MetricValue" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource FgText}"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="FontSize" Value="25"/>
-        <Setter Property="Margin" Value="0,5,0,0"/>
-    </Style>
-    <Style x:Key="MetricCaption" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource FgOverlay}"/>
-        <Setter Property="FontSize" Value="10"/>
-        <Setter Property="Margin" Value="0,3,0,0"/>
-    </Style>
 
     <!-- ============================================================ -->
     <!-- BASE STYLES                                                   -->

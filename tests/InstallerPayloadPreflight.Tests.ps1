@@ -1,7 +1,7 @@
 param([string]$ReportDirectory = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if (!$ReportDirectory) { $ReportDirectory = Join-Path $root 'reports\INSTALLER_PAYLOAD_PREFLIGHT_FIX' }
+if (!$ReportDirectory) { $ReportDirectory = Join-Path $root '_build\installer-payload-preflight' }
 New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
 . (Join-Path $root 'installer\PayloadInventory.ps1')
 $fixture = Join-Path $root ('_build\installer-preflight-' + [Guid]::NewGuid().ToString('N'))
@@ -44,6 +44,7 @@ UseSetupLdr=yes
 [Code]
 #include PreflightImplementation
 #include LegacyImplementation
+#include WebView2Implementation
 var Passed: Integer;
 
 procedure Check(Condition: Boolean; Name: String);
@@ -54,7 +55,7 @@ begin
 end;
 
 function InitializeSetup: Boolean;
-var Target, ResultPath, UnicodePath: String; Lock: TFileStream;
+var Target, ResultPath, UnicodePath: String; Lock: TFileStream; NeedsRestart: Boolean;
 begin
   Result := False;
   Passed := 0;
@@ -72,6 +73,19 @@ begin
     Check(FirstUnavailablePayloadFile(Target) = '',
       'Fixed preflight allows Setup running inside the destination directory');
 
+    Check(not HasWebView2Version('') and not HasWebView2Version('0.0.0.0') and
+      not HasWebView2Version('invalid'), 'Missing and invalid WebView2 registrations are rejected');
+    Check(not HasWebView2Version('155.0.4283.62') and not HasWebView2Version('156.0.4314.41'),
+      'WebView2 registrations below the supported minimum are rejected');
+    Check(HasWebView2Version('156.0.4314.42') and HasWebView2Version('157.0.0.0'),
+      'The minimum and newer WebView2 registrations satisfy the prerequisite');
+    if RegisteredWebView2Version <> '' then begin
+      NeedsRestart := False;
+      if (PrepareWebView2Runtime(NeedsRestart) <> '') or NeedsRestart then
+        RaiseException('Registered WebView2 must skip the bundled installer.');
+      Log('PASS Registered WebView2 skips prerequisite extraction and execution.');
+    end else
+      Log('SKIP Existing WebView2 prerequisite branch: no local registration.');
     Lock := TFileStream.Create(Target + '\Uninstaller77.dll', fmOpenRead or fmShareDenyWrite);
     try
       Check(CompareText(FirstUnavailablePayloadFile(Target), Target + '\Uninstaller77.dll') = 0,
@@ -108,7 +122,7 @@ end;
 '@
 $pascal | Set-Content -LiteralPath $scriptFile -Encoding utf8BOM
 $compiler = Join-Path $root 'tools\InnoSetup\ISCC.exe'
-& $compiler /Q "/DTestTarget=$target" "/DPayloadPreflightList=$($inventory.PreflightInclude)" "/DPreflightImplementation=$(Join-Path $root 'installer\PayloadPreflight.iss')" "/DLegacyImplementation=$(Join-Path $PSScriptRoot 'fixtures\installer\LegacyPayloadScan.iss')" $scriptFile *> (Join-Path $ReportDirectory 'PREFLIGHT_COMPILE.log')
+& $compiler /Q "/DTestTarget=$target" "/DPayloadPreflightList=$($inventory.PreflightInclude)" "/DPreflightImplementation=$(Join-Path $root 'installer\PayloadPreflight.iss')" "/DLegacyImplementation=$(Join-Path $PSScriptRoot 'fixtures\installer\LegacyPayloadScan.iss')" "/DWebView2Implementation=$(Join-Path $root 'installer\WebView2Prerequisite.iss')" /DExpectedWebView2Sha=unused $scriptFile *> (Join-Path $ReportDirectory 'PREFLIGHT_COMPILE.log')
 if ($LASTEXITCODE) { Get-Content -LiteralPath (Join-Path $ReportDirectory 'PREFLIGHT_COMPILE.log'); throw 'Preflight runner compilation failed.' }
 $runner = Join-Path $target 'Uninstaller77Setup.exe'
 $process = Start-Process -FilePath $runner -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/NORESTART',('/LOG="' + (Join-Path $target 'ENGINE.log') + '"')) -WindowStyle Hidden -PassThru -Wait
@@ -117,11 +131,12 @@ $result = Get-Content -LiteralPath (Join-Path $target 'RESULT.txt') -Raw
 Copy-Item -LiteralPath (Join-Path $target 'ENGINE.log') -Destination (Join-Path $ReportDirectory 'PREFLIGHT_RUNTIME.log')
 Copy-Item -LiteralPath $inventory.InstallInclude -Destination (Join-Path $ReportDirectory 'FIXTURE_INSTALL_INVENTORY.iss')
 Copy-Item -LiteralPath $inventory.PreflightInclude -Destination (Join-Path $ReportDirectory 'FIXTURE_PREFLIGHT_INVENTORY.iss')
-if ($result -notmatch '^10 passed / 0 failed') { throw "$result; fixture preserved: $fixture" }
+if ($result -notmatch '^13 passed / 0 failed') { throw "$result; fixture preserved: $fixture" }
+$runtimePassed = [int]($result -split ' ')[0]
 foreach ($file in $before) {
     if ((Get-FileHash -LiteralPath $file.Path).Hash -ne $file.Hash) { throw "Test runner changed fixture file: $($file.Path)" }
 }
-Write-Output 'PASS Actual Inno runtime: 10 checks passed / 0 failed; old false positive reproduced; no installation performed'
+Write-Output "PASS Actual Inno runtime: $result; no installation performed"
 Write-Output 'PASS Fixture payload, profile and database bytes were not modified'
 # Prove the payload protection distinguishes permissions from unrelated locks.
 $readonly = Join-Path $target 'settings.json'
@@ -133,7 +148,8 @@ try {
     if ($readonlyResult -notmatch '^1 passed / 0 failed') { throw "$readonlyResult; read-only regression" }
     Write-Output 'PASS Actual Inno runtime: read-only installed payload is still blocked'
 } finally { [IO.File]::SetAttributes($readonly,[IO.FileAttributes]::Normal) }
-$final = [ordered]@{ SharedInventoryChecks=1; InnoRuntimePassed=11; FixtureIntegrityChecks=1; TotalPassed=13; Failed=0; RunnerExitCode=$process.ExitCode; NativeInstallPerformed=$false; Fixture=$fixture }
+$readonlyPassed = [int]($readonlyResult -split ' ')[0]
+$final = [ordered]@{ SharedInventoryChecks=1; InnoRuntimePassed=($runtimePassed + $readonlyPassed); FixtureIntegrityChecks=1; TotalPassed=($runtimePassed + $readonlyPassed + 2); Failed=0; RunnerExitCode=$process.ExitCode; NativeInstallPerformed=$false; Fixture=$fixture }
 $final | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ReportDirectory 'PREFLIGHT_RESULTS.json') -Encoding UTF8
 # This runner contains only owned test bytes and generated includes, never user data.
 $resolved = [IO.Path]::GetFullPath($fixture)
