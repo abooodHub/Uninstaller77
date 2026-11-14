@@ -8,6 +8,7 @@ namespace WinUninstaller.Views;
 
 public partial class WebMainWindow
 {
+    private static readonly JsonSerializerOptions InstallationExportJson = new() { WriteIndented = true };
     private CancellationTokenSource? _installationFinish;
     private CancellationTokenSource? _installationCancel;
     private InstallationReport? _activeInstallation;
@@ -72,7 +73,7 @@ public partial class WebMainWindow
         };
         if (picker.ShowDialog(this) == true)
         {
-            File.WriteAllBytes(picker.FileName, JsonSerializer.SerializeToUtf8Bytes(report, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllBytes(picker.FileName, JsonSerializer.SerializeToUtf8Bytes(report, InstallationExportJson));
             _apps.SetWebNotice(UiStrings.Get(_main.LanguageCode, "monitorExported"));
         }
         return Task.CompletedTask;
