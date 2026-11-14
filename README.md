@@ -18,24 +18,24 @@
 
 ## Screenshots
 
-[Explore the interactive gallery: 8 captures with filters and full-size viewing](https://abooodhub.github.io/Uninstaller77/#gallery)
+[Explore the full-size screenshot gallery](https://abooodhub.github.io/Uninstaller77/#gallery)
 
 <table>
 <tr>
-<td width="50%"><a href="docs/site/assets/programs-ar.jpg"><img src="docs/site/assets/programs-ar.jpg" width="480" alt="Programs · development capture"></a><br>Programs · development capture</td>
-<td width="50%"><a href="docs/site/assets/windows-apps.png"><img src="docs/site/assets/windows-apps.png" width="480" alt="Windows packages · development capture"></a><br>Windows packages · development capture</td>
+<td width="50%"><a href="docs/site/assets/release-1-programs-ar.webp"><img src="docs/site/assets/release-1-programs-ar.webp" width="480" alt="Programs in Arabic"></a><br>Programs in Arabic</td>
+<td width="50%"><a href="docs/site/assets/release-1-windows-apps.webp"><img src="docs/site/assets/release-1-windows-apps.webp" width="480" alt="Windows apps"></a><br>Windows apps</td>
 </tr>
 <tr>
-<td width="50%"><a href="docs/site/assets/extensions.png"><img src="docs/site/assets/extensions.png" width="480" alt="Extensions · development capture"></a><br>Extensions · development capture</td>
-<td width="50%"><a href="docs/site/assets/queue.png"><img src="docs/site/assets/queue.png" width="480" alt="Queue · fixture preview"></a><br>Queue · fixture preview</td>
+<td width="50%"><a href="docs/site/assets/release-1-monitor.webp"><img src="docs/site/assets/release-1-monitor.webp" width="480" alt="Install Monitor"></a><br>Install Monitor</td>
+<td width="50%"><a href="docs/site/assets/release-1-queue.webp"><img src="docs/site/assets/release-1-queue.webp" width="480" alt="Uninstall queue"></a><br>Uninstall queue</td>
 </tr>
 <tr>
-<td width="50%"><a href="docs/site/assets/results.png"><img src="docs/site/assets/results.png" width="480" alt="Results · fixture preview"></a><br>Results · fixture preview</td>
-<td width="50%"><a href="docs/site/assets/history.png"><img src="docs/site/assets/history.png" width="480" alt="History · user test session"></a><br>History · user test session</td>
+<td width="50%"><a href="docs/site/assets/release-1-leftovers.webp"><img src="docs/site/assets/release-1-leftovers.webp" width="480" alt="Leftover review"></a><br>Leftover review</td>
+<td width="50%"><a href="docs/site/assets/release-1-startup.webp"><img src="docs/site/assets/release-1-startup.webp" width="480" alt="Startup apps"></a><br>Startup apps</td>
 </tr>
 </table>
 
-*Original development and test captures. The gallery identifies the context of each capture. Queue and result previews use owned fixtures.*
+*Screenshots from Release 1 (1.0.3) with demonstration data.*
 
 ## Install Release 1
 

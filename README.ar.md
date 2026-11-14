@@ -18,24 +18,24 @@
 
 ## صور البرنامج
 
-[افتح معرض الصور التفاعلي: 8 صور مع التكبير والتصنيف](https://abooodhub.github.io/Uninstaller77/#gallery)
+[افتح معرض الصور بالحجم الكامل](https://abooodhub.github.io/Uninstaller77/#gallery)
 
 <table>
 <tr>
-<td width="50%"><a href="docs/site/assets/programs-ar.jpg"><img src="docs/site/assets/programs-ar.jpg" width="480" alt="قائمة البرامج · لقطة تطوير"></a><br>قائمة البرامج · لقطة تطوير</td>
-<td width="50%"><a href="docs/site/assets/windows-apps.png"><img src="docs/site/assets/windows-apps.png" width="480" alt="حزم Windows · لقطة تطوير"></a><br>حزم Windows · لقطة تطوير</td>
+<td width="50%"><a href="docs/site/assets/release-1-programs-ar.webp"><img src="docs/site/assets/release-1-programs-ar.webp" width="480" alt="البرامج بالعربية"></a><br>البرامج بالعربية</td>
+<td width="50%"><a href="docs/site/assets/release-1-windows-apps.webp"><img src="docs/site/assets/release-1-windows-apps.webp" width="480" alt="تطبيقات ويندوز"></a><br>تطبيقات ويندوز</td>
 </tr>
 <tr>
-<td width="50%"><a href="docs/site/assets/extensions.png"><img src="docs/site/assets/extensions.png" width="480" alt="الإضافات · لقطة تطوير"></a><br>الإضافات · لقطة تطوير</td>
-<td width="50%"><a href="docs/site/assets/queue.png"><img src="docs/site/assets/queue.png" width="480" alt="الطابور · بيانات اختبار"></a><br>الطابور · بيانات اختبار</td>
+<td width="50%"><a href="docs/site/assets/release-1-monitor.webp"><img src="docs/site/assets/release-1-monitor.webp" width="480" alt="مراقب التثبيت"></a><br>مراقب التثبيت</td>
+<td width="50%"><a href="docs/site/assets/release-1-queue.webp"><img src="docs/site/assets/release-1-queue.webp" width="480" alt="طابور الإزالة"></a><br>طابور الإزالة</td>
 </tr>
 <tr>
-<td width="50%"><a href="docs/site/assets/results.png"><img src="docs/site/assets/results.png" width="480" alt="النتائج · بيانات اختبار"></a><br>النتائج · بيانات اختبار</td>
-<td width="50%"><a href="docs/site/assets/history.png"><img src="docs/site/assets/history.png" width="480" alt="السجل · جلسة المستخدم"></a><br>السجل · جلسة المستخدم</td>
+<td width="50%"><a href="docs/site/assets/release-1-leftovers.webp"><img src="docs/site/assets/release-1-leftovers.webp" width="480" alt="مراجعة المخلفات"></a><br>مراجعة المخلفات</td>
+<td width="50%"><a href="docs/site/assets/release-1-startup.webp"><img src="docs/site/assets/release-1-startup.webp" width="480" alt="برامج بدء التشغيل"></a><br>برامج بدء التشغيل</td>
 </tr>
 </table>
 
-*صور أصلية من التطوير والاختبار. يوضح المعرض سياق كل صورة. صور الطابور والنتائج تعرض بيانات اختبار مملوكة للمشروع.*
+*لقطات من نسخة 1 (1.0.3) ببيانات عرض توضيحية.*
 
 ## تثبيت نسخة 1
 
