@@ -12,17 +12,22 @@ public static class WebUiProtocol
     private static readonly HashSet<string> Operations = new(StringComparer.Ordinal)
     {
         "getState", "navigate", "refresh", "search", "sort", "category",
-        "closeUnregistered", "confirmUnregistered", "retryUnregisteredDelete", "reviewPendingDeletion",
+        "reviewProgramFile", "closeUnregistered", "confirmUnregistered", "retryUnregisteredDelete", "reviewPendingDeletion",
+        "startInstallationRecording", "finishInstallationRecording", "cancelInstallationRecording", "exportInstallationRecording",
         "selectAll", "selectApp", "openDetails", "closeDetails", "promptUninstall",
         "cancelConfirm", "setUninstallOptions", "confirmUninstall", "cancelProgress",
-        "closeProgress", "stopBatch", "runBatch", "selectResidual", "selectAllResiduals",
-        "deselectAllResiduals", "skipResiduals", "deleteReviewedResiduals", "restoreQuarantine",
-        "setLanguage", "setQueueProtection", "openSystemRestore", "loadHistory", "changeHistoryPage", "setShowTestRecords",
-        "openHistoryDetails", "closeHistoryDetails", "clearHistory", "openSettings", "closeSettings", "openProductWebsite",
-        "scanExtensions", "exportApps",
+        "closeProgress", "stopBatch", "runBatch", "openResidualReview", "selectResidual", "selectAllResiduals",
+        "deselectAllResiduals", "selectResidualGroup", "skipResiduals", "stopResidualCleanup", "deleteReviewedResiduals", "restoreQuarantine",
+        "setLanguage", "setReduceMotion", "setQueueProtection", "openSystemRestore", "loadHistory", "changeHistoryPage", "setShowTestRecords",
+        "openHistoryDetails", "closeHistoryDetails", "rescanHistoryResiduals", "clearHistory", "openSettings", "closeSettings", "openProductWebsite",
+        "scanExtensions", "openExtensionManager", "scanStartupApps", "setStartupEnabled", "setStartupBatchEnabled", "openStartupSettings", "exportApps",
         "refreshControlCenter", "openControlFolder", "openWindowsAppsSettings", "exportSupportReport",
         "retryQueueVerification", "reviewQueue", "openQueueReview", "acknowledgeQueueReview", "inventoryRendered", "performanceMark"
     };
+
+    internal static bool CanDispatch(string operation, bool unregisteredBusy, bool residualBusy, bool dialogPending) =>
+        operation is "getState" or "inventoryRendered" or "performanceMark" ||
+        (!unregisteredBusy && !dialogPending && (!residualBusy || operation == "stopResidualCleanup"));
 
     public static bool IsTrustedSource(string source)
     {
@@ -88,6 +93,11 @@ public static class WebUiProtocol
             if (operation == "openSystemRestore" && payload.EnumerateObject().Any())
             {
                 error = "The System Restore action does not accept parameters.";
+                return false;
+            }
+            if (operation == "reviewProgramFile" && payload.EnumerateObject().Any())
+            {
+                error = "The program file action does not accept parameters.";
                 return false;
             }
             request = new WebUiRequest(id, operation, payload.Clone());

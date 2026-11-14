@@ -8,6 +8,15 @@ internal static class EngineTestsProgram
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is ["--uninstall-policy"])
+            return UninstallPolicyChecks.RunAsync().GetAwaiter().GetResult();
+        if (args is ["--installation-recording-policy"])
+            return InstallationRecordingChecks.RunAsync().GetAwaiter().GetResult();
+        if (args is ["--installation-recording-vm", var monitorEvidence])
+            return InstallationRecordingChecks.RunAsync(Path.GetFullPath(monitorEvidence)).GetAwaiter().GetResult();
+        if (args is ["--installation-recording-fixture", var fixtureAction, var monitorFixtureId])
+            return InstallationRecordingChecks.RunOwnedInstaller(fixtureAction, monitorFixtureId);
+
         if (args.Length > 0 && args[0] == UninstallBroker.Switch)
         {
             try { return UninstallBroker.RunAsync(args).GetAwaiter().GetResult(); }

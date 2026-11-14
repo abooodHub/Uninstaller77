@@ -17,6 +17,9 @@ public partial class InstalledApp : ObservableObject
     public long EstimatedSizeKB { get; set; }
     public string InstallDate { get; set; } = string.Empty;
     public bool IsSystemComponent { get; set; }
+    public bool IsRemovalBlocked { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool CanUninstall => !IsRemovalBlocked;
     public string Source { get; set; } = "Registry"; // Registry | MSIX | Logged
     public string PackageFamilyName { get; set; } = string.Empty;
     public string CachedIconPath { get; set; } = string.Empty;
@@ -24,6 +27,7 @@ public partial class InstalledApp : ObservableObject
     public string Architecture { get; set; } = "64-bit"; // 64-bit | 32-bit
     public string RegistryHive { get; set; } = "HKLM"; // HKLM | HKCU
     public string RegistryKeyPath { get; set; } = string.Empty;
+    internal long? RegistrationLastWrite { get; set; }
     public InstallType InstallerType { get; set; } = InstallType.StandardExe;
 
     // Subcategory flags
@@ -62,7 +66,7 @@ public partial class InstalledApp : ObservableObject
         }
     }
 
-    public string DisplayInstallDate => ParsedInstallDate?.ToString("yyyy-MM-dd") ?? (!string.IsNullOrEmpty(InstallDate) ? InstallDate : "Unknown");
+    public string DisplayInstallDate => ParsedInstallDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? (!string.IsNullOrEmpty(InstallDate) ? InstallDate : "Unknown");
 
     public bool IsLargeApp => EstimatedSizeKB >= 500 * 1024; // >= 500 MB
 

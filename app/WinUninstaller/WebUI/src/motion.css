@@ -29,7 +29,7 @@
   outline-offset: 3px;
 }
 .button, .icon-action-button { transition-timing-function: var(--motion-ease); }
-.button.primary:hover:not(:disabled) { box-shadow: 0 4px 14px #00df811a; }
+.button.primary:hover:not(:disabled) { box-shadow: 0 4px 14px var(--accent-soft); }
 .button:disabled { box-shadow: none; transform: none; }
 .app-name-meta strong { transition: color var(--motion-fast) ease; }
 

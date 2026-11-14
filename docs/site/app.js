@@ -1,12 +1,14 @@
 const arabic = {
-  "version": "الإصدار 1.0.1",
+  "version": "نسخة 1 · معاينة 1.0.3",
   "screenshotAlt": "واجهة سجل إزالة Uninstaller 77 بالعربية، تعرض أسماء البرامج ونتائج الإزالة والتواريخ",
   "skip": "انتقل إلى المحتوى",
   "navFeatures": "الخصائص",
   "navWorkflow": "طريقة العمل",
   "navDownload": "التحميل",
-  "eyebrow": "تطبيق ويندوز · الإصدار 1.0.1",
-  "headline": "إزالة البرامج،<br><em>بصورة أوضح.</em>",
+  "eyebrow": "تطبيق ويندوز · نسخة 1",
+  "headlineLine1": "إزالة البرامج،",
+  "headlineLine2": "بصورة ",
+  "headlineEmphasis": "أوضح.",
   "lead": "برامجك المثبتة، وطابور تتحكم به، وسجل واضح لكل نتيجة. تطبيق لويندوز بواجهتين عربية وإنجليزية.",
   "downloadButton": "تحميل لويندوز",
   "viewSource": "تصفح المصدر",
@@ -24,15 +26,16 @@ const arabic = {
   "feature2Title": "طابور إزالة متتابع",
   "feature2Text": "شغّل إزالة البرامج المختارة واحدًا تلو الآخر. تابع النتيجة والوقت والمرحلة لكل برنامج، واطلب الإيقاف بعد العملية الحالية.",
   "feature3Title": "مراجعة قبل التنظيف",
-  "feature3Text": "افحص مواقع المخلفات المدعومة بعد الإزالة المؤكدة. يمكن عزل المجلدات المؤهلة بعد مراجعتها، مع ملفات بيانات تتيح استعادتها.",
+  "feature3Text": "راجع المخلفات بعد الإزالة المؤكدة. يمكن تنظيف العناصر المؤهلة المحددة، مع نسخ احتياطية لإدخالات Registry المدعومة.",
   "feature4Title": "جرد إضافات المتصفحات",
-  "feature4Text": "راجع إضافات Chrome وEdge وBrave حسب المتصفح والملف الشخصي، بما فيها الصلاحيات وسياسات الإدارة المكتشفة. الجرد للقراءة فقط.",
+  "feature4Text": "راجع الإضافات حسب المتصفح والملف الشخصي وافتح صفحة إدارة الإضافات في المتصفح المدعوم لإجراء التغييرات.",
   "extra1": "عربية RTL وإنجليزية LTR",
-  "extra2": "تصدير CSV",
+  "extra2": "مراقب التثبيت وتصدير التقارير",
   "extra3": "سجل محلي",
-  "extra4": "تكامل قائمة اختصارات Explorer",
+  "extra4": "إدارة برامج بدء التشغيل",
   "workflowLabel": "خطوات بسيطة",
-  "workflowTitle": "أنت تختار.<br> والطابور يتابع.",
+  "workflowTitleLine1": "أنت تختار.",
+  "workflowTitleLine2": "والطابور يتابع.",
   "workflowIntro": "يشغّل Uninstaller 77 مزيل التثبيت المسجّل للبرنامج. بعض المزيلات تعرض نوافذها الخاصة أو تحتاج إلى تدخلك.",
   "step1Title": "راجع اختيارك",
   "step1Text": "ابحث عن برنامج أو حدد عدة برامج. راجع نافذة التأكيد قبل البدء.",
@@ -48,14 +51,14 @@ const arabic = {
   "system": "النظام",
   "runtime": "بيئة التشغيل",
   "webview": "واجهة العرض",
-  "requirementsNote": "المتطلبات غير مرفقة بالمثبت. يتحقق منها Setup قبل تثبيت ملفات التطبيق. أغلق Uninstaller 77 قبل التحديث.",
+  "requirementsNote": "يضم المثبّت بيئة التشغيل ومثبّت WebView2. أغلق Uninstaller 77 قبل التحديث. هذه المعاينة غير موقّعة، واختبار VMware الكامل معلق.",
   "faqTitle": "تفاصيل تساعدك.",
   "faq1Q": "هل يحتاج البرنامج دائمًا إلى صلاحيات المسؤول؟",
   "faq1A": "ليس في كل عملية. قد يحتاج مزيل برنامج مثبّت لكل المستخدمين إلى مطالبة UAC من ويندوز. يُسجّل رفضها كإلغاء؛ صلاحيات المسؤول لا تضمن نجاح كل مزيل.",
   "faq2Q": "هل تعني نسبة 100% إزالة جميع البرامج؟",
   "faq2A": "تعني انتهاء معالجة عناصر الطابور. تبقى النتائج الناجحة والفاشلة والمتخطاة منفصلة، ولا تُسجّل المحاولة الفاشلة كإزالة ناجحة.",
   "faq3Q": "هل يمكن تفعيل إضافات المتصفح أو تعطيلها أو حذفها؟",
-  "faq3A": "الإصدار 1.0 يجرد بيانات الإضافات المحلية. لا يعدّل ملفات المتصفح مباشرة ولا يفعّل الإضافات أو يعطّلها أو يحذفها.",
+  "faq3A": "يعرض Uninstaller 77 الإضافات ويفتح إعدادات المتصفح المدعوم. تُجرى تغييرات الإضافات داخل المتصفح نفسه.",
   "faq4Q": "هل يُرفع جرد البرامج أو السجل تلقائيًا؟",
   "faq4A": "الواجهة ومواردها مرفقة محليًا. يحفظ Uninstaller 77 سجلاته على الجهاز ولا يرفع جرد البرامج أو سجل العمليات تلقائيًا. لمزيلات الشركات الأخرى سلوكها الخاص.",
   "reportIssue": "الإبلاغ عن مشكلة",
@@ -106,7 +109,7 @@ Object.assign(arabic, {
   "extensionsLabel": "إضافات المتصفحات",
   "extensionsText": "تبقى هوية المتصفح والملف الشخصي منفصلة، حتى للإضافة نفسها.",
   "extensionsBadge": "لقطة تطوير سابقة",
-  "extensionsNote": "من نسخة تطوير سابقة. أزرار إدارة المتصفح الظاهرة هنا غير متاحة في الإصدار 1.0؛ الجرد للقراءة فقط.",
+  "extensionsNote": "من نسخة تطوير سابقة. قد يختلف ترتيب أدوات إدارة الإضافات في نسخة 1.",
   "extensionsAlt": "إضافات المتصفحات — لقطة تطوير سابقة",
   "queueTitle": "تابع العملية الحالية",
   "queueLabel": "طابور الإزالة · العربية",
@@ -139,19 +142,18 @@ Object.assign(arabic, {
   "detailsNote": "لقطة تطوير سابقة لنافذة تفاصيل البرنامج؛ قد تختلف بعض التفاصيل المرئية في الإصدار 1.0.",
   "detailsAlt": "تفاصيل البرنامج — لقطة تطوير سابقة"
 });
-const nodes = [...document.querySelectorAll('[data-i18n],[data-i18n-html],[data-i18n-alt]')];
-const english = new Map(nodes.map(node => [node,node.hasAttribute('data-i18n-alt') ? node.alt : node.hasAttribute('data-i18n-html') ? node.innerHTML : node.textContent]));
+const nodes = [...document.querySelectorAll('[data-i18n],[data-i18n-alt]')];
+const english = new Map(nodes.map(node => [node,node.hasAttribute('data-i18n-alt') ? node.alt : node.textContent]));
 const button = document.getElementById('language');
 function setLanguage(language) {
   const ar = language === 'ar';
   document.documentElement.lang = ar ? 'ar' : 'en';
   document.documentElement.dir = ar ? 'rtl' : 'ltr';
   for (const node of nodes) {
-    const key = node.dataset.i18n || node.dataset.i18nHtml || node.dataset.i18nAlt;
+    const key = node.dataset.i18n || node.dataset.i18nAlt;
     const value = ar ? arabic[key] : english.get(node);
     if (value == null) continue;
     if (node.hasAttribute('data-i18n-alt')) node.alt = value;
-    else if (node.hasAttribute('data-i18n-html')) node.innerHTML = value;
     else node.textContent = value;
   }
   button.textContent = ar ? 'English' : 'العربية';

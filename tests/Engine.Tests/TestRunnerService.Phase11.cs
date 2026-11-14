@@ -187,7 +187,7 @@ public partial class TestRunnerService
         await RunTest("Phase11 cancelled and unidentified scans are not completed", results, logger, async () =>
         {
             using var cancel = new CancellationTokenSource(); cancel.Cancel();
-            var cancelled = await new FailedResidualFixture().ScanResidualsAsync(Identity(), cancel.Token);
+            var cancelled = await new FailedResidualFixture().ScanResidualsAsync(Identity(), ct: cancel.Token);
             var absentIdentity = await new ResidualScanService().ScanResidualsAsync(new InstalledApp());
             if (cancelled.State != ResidualScanState.Cancelled || absentIdentity.State != ResidualScanState.NotScanned) throw new Exception("Cancelled or unidentified scan became completed.");
             return "Pre-cancellation never enters the scanner; missing installation identity remains NotScanned.";

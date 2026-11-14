@@ -1,0 +1,322 @@
+.uninstall-flow-steps {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; list-style:none;
+  margin:0; padding:13px 24px; border-bottom:1px solid #ffffff0b; background:#111318;
+}
+.uninstall-flow-steps li { position:relative; display:flex; align-items:center; gap:7px; min-width:0; color:#737b88; font-size:10px; }
+.uninstall-flow-steps li:not(:last-child)::after { content:""; position:absolute; top:50%; inset-inline-start:calc(100% - 14px); width:28px; height:1px; background:#343842; }
+.uninstall-flow-steps li>span { width:21px; height:21px; display:grid; place-items:center; flex:none; border:1px solid #3a3f49; border-radius:50%; background:#1b1e24; font-size:9px; }
+.uninstall-flow-steps li>bdi { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.uninstall-flow-steps li.active { color:#e8edf2; }
+.uninstall-flow-steps li.active>span { color:#071b12; border-color:#00df81; background:#00df81; box-shadow:0 0 0 5px #00df8114; }
+.uninstall-flow-steps li.complete { color:#89bda8; }
+.uninstall-flow-steps li.complete>span { color:#00df81; border-color:#00df8160; background:#00df8110; }
+.uninstall-options { padding:2px 24px 5px; }
+.premium-confirm { border-color:#3a4049; background:linear-gradient(155deg,#1b1e24,#15171c 72%); box-shadow:0 30px 90px #000b,0 0 0 1px #ffffff06 inset; }
+.premium-confirm .confirmation-card { animation:uninstall-card-enter 260ms cubic-bezier(.2,.8,.2,1) both; }
+.premium-confirm .confirmation-card:nth-child(2) { animation-delay:45ms; }
+.premium-confirm .confirmation-card:nth-child(3) { animation-delay:90ms; }
+.uninstall-completion { display:flex; flex-direction:column; align-items:center; padding:22px 18px 8px; text-align:center; animation:completion-enter 320ms cubic-bezier(.2,.8,.2,1) both; }
+.completion-check { width:70px; height:70px; display:grid; place-items:center; border:2px solid #00df81; border-radius:50%; color:#00df81; background:#00df810d; box-shadow:0 0 36px #00df8124; }
+.uninstall-completion h3 { margin:14px 0 4px; color:#f2f5f7; font-size:21px; }
+.uninstall-completion>p { max-width:560px; margin:0; color:#9ba4b0; font-size:12px; line-height:1.7; }
+.completion-last-app { display:flex; align-items:center; gap:9px; margin-top:12px; padding:7px 11px; border:1px solid #ffffff0d; border-radius:9px; background:#ffffff04; text-align:start; }
+.completion-last-app .app-icon { width:34px; height:34px; }
+.completion-last-app>div { min-width:0; }
+.completion-last-app strong,.completion-last-app span { display:block; overflow:hidden; max-width:360px; text-overflow:ellipsis; white-space:nowrap; }
+.completion-last-app strong { color:#dfe5ea; font-size:11px; }
+.completion-last-app .queue-current-stage { margin-top:2px; color:#84909c; font-size:9px; }
+.completion-progress { width:min(100%,520px); height:3px; margin-top:15px; overflow:hidden; border-radius:99px; background:#28302d; }
+.completion-progress>span { display:block; width:100%; height:100%; background:#00df81; }
+.completion-metrics { width:min(100%,520px); display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:18px; }
+.completion-metrics .metric { text-align:start; background:#1d2026; border-color:#ffffff10; }
+.uninstall-completion>.completion-verification { width:min(100%,520px); display:flex; justify-content:space-between; gap:12px; margin:9px 0 0; color:#84909d; font-size:10px; }
+.completion-cleanup-summary { width:min(100%,520px); display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:9px; padding-top:9px; border-top:1px solid #ffffff0d; }
+.completion-cleanup-summary .metric { text-align:start; background:#171a1f; border-color:#00df8114; }
+@keyframes uninstall-card-enter { from { opacity:0; transform:translateY(9px) scale(.99); } to { opacity:1; transform:none; } }
+@keyframes uninstall-orbit-pulse { 0%,100% { transform:scale(.96); opacity:.35; } 50% { transform:scale(1.04); opacity:.8; } }
+@keyframes completion-enter { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
+@media(max-width:640px) {
+  .uninstall-flow-steps { padding-inline:14px; }
+  .uninstall-flow-steps li>bdi { display:none; }
+  .uninstall-flow-steps li:not(:last-child)::after { width:45%; inset-inline-start:55%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .premium-confirm .confirmation-card,.uninstall-completion { animation:none!important; }
+}
+.reduce-motion .premium-confirm .confirmation-card,.reduce-motion .uninstall-completion { animation:none!important; }
+
+/* One visual system for confirmation, running, results and leftover review. */
+.modal.uninstall-shell { width:min(760px,calc(100vw - 48px)); max-height:calc(100dvh - 48px); overflow:hidden; border:1px solid var(--border); border-radius:var(--dialog-radius); background:var(--bg-sidebar); box-shadow:var(--shadow-lg); color:var(--text-1); }
+.uninstall-shell .modal-header,.uninstall-shell .queue-header { min-height:66px; padding:16px 24px; margin:0; border-bottom:1px solid #ffffff09; background:transparent; }
+.uninstall-shell .modal-title-icon,.uninstall-shell .queue-status-icon { width:36px; height:36px; border:1px solid #00df8130; border-radius:50%; background:#00df810d; color:#00df81; }
+.uninstall-shell .modal-header h2,.uninstall-shell .queue-heading h2 { color:#edf6f2; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.uninstall-shell .modal-header p,.uninstall-shell .queue-heading small { color:#71817b; }
+.uninstall-shell .icon-button { color:#7e8c87; }
+.uninstall-shell .icon-button:hover { background:#ffffff08; color:#e5efeb; }
+.uninstall-shell .uninstall-flow-steps { padding:12px 24px; border-bottom:1px solid #ffffff08; background:#090d0c80; }
+.uninstall-shell .uninstall-flow-steps li { color:#66746f; }
+.uninstall-shell .uninstall-flow-steps li.active { color:#dbe7e2; }
+.uninstall-shell .uninstall-flow-steps li>span { border-color:#34403b; background:#111816; }
+.uninstall-shell .uninstall-flow-steps li:not(:last-child)::after { background:#2a3531; }
+.uninstall-shell .modal-actions,.uninstall-shell .queue-footer { margin:0; border-top:1px solid #ffffff09; background:#090d0cb8; }
+.uninstall-shell .modal-actions { padding:15px 24px 17px; }
+.uninstall-shell .button { border-radius:9px; }
+.uninstall-shell .button.primary:not(:disabled) { border-color:transparent; background:var(--accent); color:var(--accent-ink); box-shadow:none; }
+.uninstall-shell .button.primary:not(:disabled):hover { background:var(--accent-hover); }
+.uninstall-shell .button.quiet { border-color:#ffffff13; background:#ffffff05; color:#aebbb6; }
+.uninstall-shell .button.quiet:not(:disabled):hover { border-color:var(--border); background:var(--surface-3); color:var(--text-1); }
+.uninstall-shell .confirmation-apps { padding:0 24px 8px; }
+.uninstall-shell .confirmation-card { border-color:#ffffff0d; border-radius:11px; background:#ffffff03; }
+.uninstall-shell .confirmation-card:hover { border-color:#00df8138; background:#00df8107; }
+.uninstall-shell .confirmation-identity>strong { color:#edf5f1; }
+.uninstall-shell .confirmation-identity>span { color:#a6b3ae; }
+.uninstall-shell .confirmation-identity small,.uninstall-shell .confirmation-identity summary { color:#71807a; }
+.uninstall-shell .uninstall-completion { min-height:390px; justify-content:center; padding:24px 18px; }
+.uninstall-shell .completion-check { width:92px; height:92px; border-color:#00df81; background:#00df810a; box-shadow:0 0 70px #00df8128; }
+.uninstall-shell .uninstall-completion h3 { color:#edf7f2; font-size:24px; }
+.uninstall-shell .completion-last-app,.uninstall-shell .completion-metrics .metric,.uninstall-shell .completion-cleanup-summary .metric { border-color:#ffffff0d; background:#ffffff03; }
+.uninstall-shell .completion-progress>span { background:#00df81; box-shadow:0 0 14px #00df8170; }
+.uninstall-shell.residual-review .residual-toolbar { margin:0 24px 9px; color:#8d9b96; }
+.uninstall-shell.residual-review .residual-toolbar .button { color:#8fdab9; }
+.uninstall-shell.residual-review .residual-list { border-color:#ffffff0d; }
+.uninstall-shell .residual-group>header { background:#151c19; border-bottom:1px solid #ffffff0a; }
+.uninstall-shell .residual-group>header strong { color:#e3eee9; }
+.uninstall-shell .residual-group>header small,.uninstall-shell .residual-group>header>bdi { color:#75847e; }
+.uninstall-shell.residual-review .button.residual-danger { border-color:#b84f5c; }
+@media(max-width:640px) {
+  .modal.uninstall-shell,.modal.uninstall-shell.residual-review { width:calc(100vw - 16px); max-height:calc(100dvh - 16px); border-radius:14px; }
+  .uninstall-shell .modal-header,.uninstall-shell .queue-header { padding-inline:16px; }
+  .uninstall-shell .confirmation-apps { padding-inline:16px; }
+  .uninstall-shell.residual-review .residual-list { margin-inline:16px; }
+}
+
+/* Leftover tree follows the supplied cleanup-window reference. */
+.modal.uninstall-shell.residual-review { border-color:#4b5066; box-shadow:0 18px 60px #000c; }
+.uninstall-shell.residual-review .icon-button { border:0; border-radius:2px; }
+.uninstall-shell.residual-review .residual-group>header { min-height:39px; padding:6px 12px; gap:7px; background:#2b2e42; border-bottom:1px solid #464b61; }
+.uninstall-shell.residual-review .residual-group>header .app-icon { width:22px; height:22px; border-radius:3px; }
+.uninstall-shell.residual-review .residual-group>header strong { color:#e4e8ef; font-size:12px; font-weight:500; }
+.uninstall-shell.residual-review .residual-group>header small { display:none; }
+.uninstall-shell.residual-review .residual-group>header>bdi { color:#9199ac; }
+.uninstall-shell.residual-review .residual-row { position:relative; min-height:38px; padding:5px 12px 5px 48px; gap:8px; border-color:#383c50; background:#27293a; }
+.rtl .uninstall-shell.residual-review .residual-row { padding:5px 48px 5px 12px; }
+.uninstall-shell.residual-review .residual-row:not(.informational):hover { background:#303348; }
+.uninstall-shell.residual-review .residual-size { min-width:78px; color:#b9c1d0; }
+.uninstall-shell.residual-review input[type="checkbox"] { width:15px; height:15px; accent-color:#55d82f; }
+.uninstall-shell.residual-review .residual-tree-toolbar { align-items:center; }
+.uninstall-shell.residual-review .residual-tree-toolbar>div { order:0; }
+.uninstall-shell.residual-review .residual-tree-toolbar>span { margin-inline-start:auto; color:#aeb5c4; }
+.uninstall-shell.residual-review .modal-actions { justify-content:center; margin-top:8px; padding:13px 20px 16px; background:#242636; border-color:#3d4155; }
+@media(max-width:700px) {
+  .modal.uninstall-shell.residual-review { width:calc(100vw - 16px); height:calc(100dvh - 16px); }
+}
+
+/* Confirmation scrolls its program list while options and actions remain visible. */
+.modal.uninstall-shell.premium-confirm { display:flex; flex-direction:column; }
+.premium-confirm .confirmation-apps { overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.premium-confirm .confirmation-card .app-icon { width:38px; height:38px; flex-basis:38px; }
+.premium-confirm .confirmation-identity>strong { font-size:13px; }
+.premium-confirm .confirmation-identity>span { font-size:11px; }
+.premium-confirm .confirmation-identity details { margin-top:3px; font-size:10px; }
+.premium-confirm .confirmation-identity details code { display:block; overflow-wrap:anywhere; }
+.premium-confirm>.modal-actions { flex:none; margin-top:auto; position:sticky; bottom:0; }
+.uninstall-flow-steps { flex:none; }
+
+/* Compact, bounded queue layout: header and footer stay fixed while details scroll. */
+.queue-workspace.is-live { height:min(650px,calc(100dvh - 32px)); min-height:0; display:flex; flex-direction:column; }
+.queue-workspace.is-live .queue-header { flex:none; }
+.queue-workspace.is-live .progress-body { flex:1 1 auto; min-height:0; overflow:auto; justify-content:flex-start; padding:12px 28px; }
+.queue-workspace.is-live .queue-overview { flex:none; }
+.queue-workspace.is-live .queue-current { flex-direction:row; justify-content:flex-start; gap:13px; padding:8px 6px; text-align:start; }
+.queue-workspace.is-live .queue-current h3 { font-size:17px; }
+.queue-workspace.is-live .queue-current-stage { justify-content:flex-start; margin-top:3px; font-size:11px; }
+.queue-workspace.is-live .queue-progress-section { margin:8px auto 0; }
+.queue-workspace.is-live .queue-progress-caption { justify-content:space-between; margin-bottom:5px; }
+.queue-workspace.is-live .queue-progress-caption strong { display:inline; }
+.queue-workspace.is-live .progress-track { height:6px; }
+.queue-workspace.is-live .queue-progress-meta { justify-content:space-between; }
+.queue-workspace.is-live .queue-disclosure,.queue-workspace.is-live .queue-log { width:100%; flex:none; }
+.queue-workspace.is-live .queue-results { max-height:190px; overflow:auto; }
+.queue-workspace.is-live .queue-footer { flex:none; }
+.queue-workspace.is-live .modal-actions { flex-wrap:wrap; }
+.queue-workspace.is-live .queue-footer-hint { display:block; flex:1 1 100%; text-align:center; }
+@keyframes small-queue-spin { to { transform:rotate(360deg); } }
+@media(max-height:680px) {
+  .queue-workspace.is-live { height:calc(100dvh - 16px); }
+  .queue-workspace.is-live .progress-body { padding-block:6px; }
+  .queue-workspace.is-live .queue-list-section:not([open]) { display:none; }
+}
+@media(max-width:620px) {
+  .premium-confirm .confirmation-apps { padding-inline:14px; }
+  .premium-confirm .uninstall-options { padding-inline:14px; }
+  .queue-workspace.is-live .progress-body { padding-inline:14px; }
+  .queue-workspace.is-live .modal-actions .button { min-width:0; flex:1; }
+}
+
+/* IObit-inspired uninstall carousel: the current application is encircled. */
+.queue-workspace .queue-carousel { display:flex; flex-direction:column; align-items:center; gap:16px; padding:16px 4px 5px; }
+.queue-carousel-cards { display:flex; align-items:center; justify-content:center; gap:clamp(12px,4vw,46px); width:100%; min-height:190px; }
+.queue-carousel-card { position:relative; display:flex; flex:1 1 0; min-width:0; max-width:190px; height:172px; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:9px; border:1px solid transparent; border-radius:14px; background:transparent; color:#aab3bd; cursor:pointer; transition:transform .22s ease,opacity .22s ease,background .22s ease; }
+.queue-carousel-card:not(.current) { opacity:.78; }
+.queue-carousel-card:hover { background:#ffffff06; opacity:1; }
+.queue-carousel-card.current { position:relative; flex:0 0 190px; width:190px; height:190px; transform:scale(1.04); border:0; border-radius:50%; background:#121614; color:#f2f7f4; }
+.queue-carousel-card.current::before { content:""; position:absolute; inset:0; z-index:0; padding:2px; border-radius:50%; background:conic-gradient(#00df81 0deg,#00df81 260deg,#303635 260deg,#303635 360deg); -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; animation:carousel-ring-wait 1.5s linear infinite; }
+.queue-carousel-card.current>* { position:relative; z-index:1; }
+.queue-carousel-card.current .queue-carousel-ring { width:68px; height:68px; border-color:#34403b; background:#171a1e; box-shadow:0 0 18px #00df8114; }
+.queue-carousel-ring { position:relative; display:grid; place-items:center; width:72px; height:72px; border:1px solid #42484a; border-radius:50%; background:#171a1e; transition:width .22s ease,height .22s ease,border-color .22s ease; }
+.queue-carousel-card.current .app-icon { position:relative; z-index:1; width:52px; height:52px; }
+.queue-carousel-card>strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:550; }
+.queue-carousel-card>small { color:#87918c; font-size:10px; }
+.queue-carousel-result { min-height:17px; color:#00df81; font-size:10px; }
+.queue-carousel-card.failed .queue-carousel-result { color:#ff747d; }
+.queue-carousel-controls { display:flex; align-items:center; gap:14px; color:#8a9690; font-size:10px; }
+.queue-carousel-controls .button { min-height:28px; padding:4px 10px; }
+.queue-carousel-stage { justify-content:center; padding:6px 10px; color:#bdc8c2; text-align:center; }
+.queue-carousel-stage span:last-child { overflow-wrap:anywhere; }
+@media(max-width:640px) {
+  .queue-carousel-cards { gap:4px; min-height:146px; }
+  .queue-carousel-card { height:128px; padding:5px; }
+  .queue-carousel-card.current { flex-basis:146px; width:146px; height:146px; }
+  .queue-carousel-card.current .queue-carousel-ring { width:54px; height:54px; }
+  .queue-carousel-ring { width:54px; height:54px; }
+  .queue-carousel-card.current .app-icon { width:42px; height:42px; }
+  .queue-carousel-card>strong { font-size:10px; }
+}
+@keyframes carousel-ring-wait { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .queue-carousel-card,.queue-carousel-ring,.queue-carousel-card.current::before { transition:none; animation:none; } }
+.reduce-motion .queue-carousel-card,.reduce-motion .queue-carousel-ring,.reduce-motion .queue-carousel-card.current::before { transition:none; animation:none; }
+
+/* Windows package inventory grouped by current host inventory. */
+.windows-apps-surface { display:flex; min-height:0; flex:1; flex-direction:column; overflow:hidden; border:1px solid var(--border); border-radius:9px; background:var(--surface-1); }
+.windows-apps-surface .catalog-toolbar { flex:none; }
+.windows-app-groups { flex:1; min-height:0; overflow:auto; padding:12px 16px; }
+.windows-app-groups details { margin-bottom:9px; border:1px solid #ffffff0b; border-radius:8px; background:#14161a; }
+.windows-app-groups summary { display:flex; align-items:center; gap:10px; padding:11px 13px; color:#dce5e0; font-weight:600; cursor:pointer; list-style:none; }
+.windows-app-groups summary>bdi { margin-inline-start:auto; color:#8f9a94; }
+.windows-app-row { display:grid; grid-template-columns:22px 34px minmax(0,1fr) 100px; gap:12px; align-items:center; min-height:52px; padding:7px 14px; border-top:1px solid #ffffff08; }
+.windows-app-row strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.windows-app-state { justify-self:end; color:#00df81; font-size:11px; }
+.windows-app-row.removal-blocked .windows-app-state { color:var(--text-2); text-align:end; }
+.windows-apps-footer { position:sticky; bottom:0; display:flex; flex:none; align-items:center; gap:14px; padding:11px 16px; border-top:1px solid #ffffff10; background:#15171deF; }
+.windows-apps-footer>label { display:flex; align-items:center; gap:8px; margin-inline-end:auto; color:#a8b3ad; font-size:11px; }
+.windows-apps-footer>span { color:#aab4ae; font-size:11px; }
+.windows-apps-footer>span bdi { color:var(--accent); font-weight:700; }
+.queue-workspace.is-live .queue-carousel { width:100%; }
+@media(max-width:620px) { .windows-app-row { grid-template-columns:20px 30px minmax(0,1fr) 65px; gap:7px; padding-inline:8px; } .windows-apps-footer { gap:7px; padding-inline:8px; } .windows-apps-footer>label { font-size:9px; } }
+
+/* Shared layout for the confirmation, progress, results, and cleanup windows. */
+.modal.uninstall-shell:is(.simple-progress,.premium-confirm,.residual-review) {
+  --workflow-green:var(--accent);
+  --workflow-inset:clamp(16px,4vw,40px);
+  display:flex; flex-direction:column; width:min(820px,calc(100vw - 32px));
+  height:min(566px,calc(100dvh - 32px)); max-height:none;
+  border:1px solid var(--border); border-radius:var(--dialog-radius); background:var(--bg-sidebar);
+  box-shadow:0 24px 80px #0009;
+}
+.workflow-header { display:flex; flex:none; align-items:center; justify-content:space-between; height:38px; padding:0 12px; color:var(--text-2); font-size:12px; }
+.workflow-header .icon-button { width:27px; height:27px; color:var(--text-2); }
+.simple-progress-body { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:safe center; overflow:auto; padding:16px var(--workflow-inset); }
+.simple-progress-cards,.premium-confirm .confirmation-apps { display:flex; align-items:center; justify-content:safe center; gap:26px; width:100%; }
+.simple-progress-cards { flex:none; min-height:190px; }
+.simple-progress-card,.premium-confirm .confirmation-card { position:relative; display:flex; flex:0 1 184px; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:7px; text-align:center; }
+.simple-progress-card { aspect-ratio:1; }
+.workflow-ring { position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); fill:none; stroke:var(--surface-3); stroke-width:4; pointer-events:none; }
+.workflow-ring-value { stroke:var(--workflow-green); transition:stroke-dasharray .38s ease; }
+.simple-progress-card .app-icon,.premium-confirm .confirmation-card .app-icon { width:32px; height:32px; flex:0 0 32px; background:transparent; border:0; }
+.simple-progress-card .app-icon-img,.simple-progress-card .animated-icon-inner,.premium-confirm .confirmation-card .app-icon-img { width:32px; height:32px; }
+.simple-progress-card strong,.premium-confirm .confirmation-identity strong { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-1); font-size:13px; font-weight:500; }
+.simple-progress-card small,.premium-confirm .confirmation-size { color:var(--text-2); font-size:12px; }
+.simple-neighbor-result { display:grid; place-items:center; height:24px; color:var(--workflow-green); }
+.result-failed .simple-neighbor-result { color:var(--red); }
+.result-partial .simple-neighbor-result,.result-cancelled .simple-neighbor-result,.result-notinstalled .simple-neighbor-result { color:var(--orange); }
+.simple-progress-status { margin:44px 0 0; text-align:center; font-size:14px; color:#b7bdc2; }
+.simple-progress-footer,.premium-confirm>.modal-actions,.uninstall-shell.residual-review .residual-footer .modal-actions { flex:none; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:12px 24px; margin:0; padding:20px 18px 75px; border:0; background:transparent; }
+.modal.uninstall-shell :is(.simple-progress-footer,.modal-actions) .button { min-width:min(180px,40%); }
+.simple-progress-footer .button,.premium-confirm>.modal-actions .button,.uninstall-shell.residual-review .residual-footer .button { height:40px; justify-content:center; border-radius:var(--control-radius); }
+.uninstall-shell :is(.simple-progress-footer,.modal-actions) .button.quiet:not(:hover,:disabled) { background:var(--surface-2); border-color:var(--border); color:var(--text-1); }
+.residual-review .residual-footer .button.residual-danger:not(:disabled) { background:var(--accent); color:var(--accent-ink); border-color:transparent; box-shadow:none; }
+.residual-review .residual-footer .button.residual-danger:disabled { background:transparent; border-color:#333; color:#888; }
+.simple-progress.is-done .simple-progress-body { justify-content:flex-start; padding-top:58px; gap:24px; }
+.simple-progress.is-done .simple-progress-body>* { flex-shrink:0; }
+.simple-progress.is-done .simple-progress-footer { padding-bottom:64px; }
+.simple-result-summary { display:flex; flex-direction:column; align-items:center; text-align:center; gap:25px; color:var(--workflow-green); }
+.simple-result-summary>svg { width:70px; height:70px; stroke-width:1.1; }
+.simple-result-summary h3 { margin:0; font-size:15px; font-weight:400; line-height:1.6; color:#bcc4c9; }
+.simple-result-summary.has-failures { color:var(--orange); }
+.simple-result-list { width:100%; }
+.simple-result-row { display:flex; align-items:center; gap:10px; min-height:72px; padding:8px; border-bottom:1px solid #ffffff12; }
+.simple-result-row>div:not(.app-icon) { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; overflow-wrap:anywhere; }
+.simple-result-row strong,.simple-result-row small { font-size:12px; }
+.simple-result-row small { color:#a7b3af; }
+.simple-result-row .app-icon { flex:0 0 32px; width:32px; height:32px; }
+.simple-result-row .simple-result-reason,.simple-result-review-only,.simple-result-outcome { color:var(--orange); }
+.simple-result-row.result-failed :is(.simple-result-reason,.simple-result-outcome) { color:var(--red); }
+.simple-result-row.result-completed .simple-result-outcome { color:var(--accent); }
+.simple-progress-preview { font-size:11px; color:#cbb77f; }
+.reference-result-metrics { display:flex; justify-content:center; gap:18px; margin-top:22px; }
+.reference-result-metrics>div { width:125px; min-height:145px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; border:1px solid #292929; background:#080808; border-radius:10px; }
+.reference-result-metrics svg { color:#9da6aa; }
+.reference-result-metrics strong { color:var(--workflow-green); font-size:20px; font-weight:400; }
+.reference-result-metrics span { color:#b6bdc2; font-size:12px; }
+.premium-confirm .confirmation-apps { flex:1; min-height:0; flex-flow:row wrap; align-content:safe center; overflow:auto; padding:15px var(--workflow-inset); }
+.premium-confirm .confirmation-card { margin:0; padding:12px 0; border:0; background:transparent; }
+.premium-confirm .confirmation-identity { flex:none; max-width:100%; min-width:0; }
+.confirmation-question { flex:none; margin:0 14px 12px; color:var(--text-1); font-size:16px; text-align:center; }
+.premium-confirm .uninstall-options { flex:none; display:flex; flex-wrap:wrap; justify-content:center; gap:8px 38px; margin:0 16px 36px; padding:0; border:0; }
+.premium-confirm .option-row,.residual-select-toggle { display:flex; align-items:center; gap:7px; margin:0; padding:4px 0; border:0; background:transparent; color:#b3bbc2; font-size:12px; }
+.modal.uninstall-shell:is(.premium-confirm,.residual-review) input[type=checkbox] {
+  appearance:none; display:grid; place-items:center; width:15px; height:15px;
+  margin:0; flex:none; border:1px solid #777; border-radius:3px; background:#101010;
+}
+.modal.uninstall-shell:is(.premium-confirm,.residual-review) input[type=checkbox]:is(:checked,:indeterminate) { border-color:var(--workflow-green); color:var(--workflow-green); }
+.modal.uninstall-shell:is(.premium-confirm,.residual-review) input[type=checkbox]:checked::after {
+  content:""; width:8px; height:4px; border:solid currentColor; border-width:0 0 1.5px 1.5px; transform:translateY(-1px) rotate(-45deg);
+}
+.modal.uninstall-shell:is(.premium-confirm,.residual-review) input[type=checkbox]:indeterminate::after { content:""; width:7px; border-bottom:1.5px solid currentColor; }
+.modal.uninstall-shell:is(.premium-confirm,.residual-review) input[type=checkbox]:disabled { opacity:.72; }
+.residual-reference-intro { flex:none; margin:27px var(--workflow-inset) 12px; color:#c4cbd1; font-size:15px; }
+.uninstall-shell.residual-review .residual-list { flex:1; min-height:0; margin:0 var(--workflow-inset); padding:7px 9px; background:var(--surface-1); border:0; border-radius:var(--r-sm); overflow:auto; }
+.uninstall-shell.residual-review .residual-list.is-cleaning { opacity:.55; }
+.uninstall-shell.residual-review .residual-group { margin:0; background:transparent; border:0; }
+.residual-group-empty-row { display:flex; align-items:center; gap:8px; padding:7px; color:#a8b1b8; font-size:12px; flex-wrap:wrap; }
+.residual-group-empty-row .app-icon { width:20px; height:20px; flex:0 0 20px; }
+.uninstall-shell.residual-review :is(.residual-group,.residual-kind-group)>summary { display:flex; align-items:center; gap:5px; min-height:24px; padding:2px 0; list-style:none; cursor:pointer; color:#d2d6db; font-size:12px; }
+.residual-review summary::-webkit-details-marker { display:none; }
+.residual-review summary strong { max-width:65%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400; }
+.residual-review summary .app-icon { width:16px; height:16px; flex:0 0 16px; border:0; }
+.residual-review summary .app-icon-img { width:16px; height:16px; }
+.tree-expander { display:grid; place-items:center; width:12px; height:12px; flex:none; background:#2b2b2b; border-radius:2px; color:#c4c4c4; }
+.tree-expander::before { content:"+"; }
+.residual-review details[open]>summary .tree-expander::before { content:"−"; }
+.residual-group-items { margin-inline-start:6px; padding-inline-start:13px; border-inline-start:1px dotted #444; color:#aeb8be; }
+.modal.uninstall-shell.residual-review .residual-row { position:static; display:flex; align-items:center; gap:5px; min-height:24px; margin-inline-start:6px; padding:2px 0; padding-inline-start:15px; border:0; border-inline-start:1px dotted #444; background:transparent; flex-wrap:wrap; cursor:default; }
+.residual-check,.residual-check-spacer { display:grid; place-items:center; width:15px; flex:none; }
+.residual-inline-path { display:block; flex:1; min-width:60px; color:#d1d5da; font:12px 'Segoe UI',sans-serif; overflow-wrap:anywhere; text-align:match-parent; }
+.residual-review-badge,.residual-item-kind { color:#c8b589; font-size:10px; }
+.residual-item-reason { flex-basis:100%; padding-inline-start:19px; color:#a6adb2; font-size:10px; }
+.residual-copy-path { border:0; background:transparent; color:#8fcfac; font-size:10px; cursor:pointer; opacity:0; }
+.residual-row:is(:hover,:focus-within) .residual-copy-path { opacity:1; }
+.residual-review .residual-footer { flex:none; border:0; background:transparent; }
+.residual-select-toggle { display:inline-flex; margin:8px var(--workflow-inset) 0; }
+.uninstall-shell.residual-review .residual-footer .modal-actions { padding:10px 16px 30px; }
+.uninstall-shell.residual-review .residual-footer .button.residual-danger { border:1px solid transparent; }
+.uninstall-shell.residual-review .residual-footer .button.residual-danger:disabled { border-color:#333; }
+.uninstall-shell.residual-review .residual-footer .button.residual-danger:not(:disabled):hover { background:var(--accent-hover); }
+.residual-delete-progress { display:grid; gap:8px; margin:3px var(--workflow-inset) 0; color:#b8c2c9; font-size:11px; }
+.residual-delete-progress progress { appearance:none; width:100%; height:4px; border:0; }
+.residual-delete-progress progress::-webkit-progress-bar { background:#222; border-radius:6px; }
+.residual-delete-progress progress::-webkit-progress-value { background:var(--workflow-green); border-radius:6px; transition:width .2s ease; }
+.residual-delete-progress bdi { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.residual-result-summary { display:flex; flex-wrap:wrap; gap:12px; color:#b8c6bf; font-size:12px; }
+.modal.uninstall-shell:is(.simple-progress,.premium-confirm,.residual-review) :is(button,input,summary):focus-visible { outline:2px solid var(--workflow-green); outline-offset:2px; }
+@media(max-height:520px) {
+  .simple-progress-footer,.premium-confirm>.modal-actions,.simple-progress.is-done .simple-progress-footer { padding-bottom:18px; }
+  .simple-progress.is-done .simple-progress-body { padding-top:15px; }
+  .premium-confirm .uninstall-options { margin-bottom:8px; }
+  .simple-progress-cards { min-height:145px; }
+  .simple-progress-card { flex-basis:145px; }
+  .simple-progress-status { margin-top:15px; }
+}
+@media(max-width:600px) { .simple-progress-cards,.premium-confirm .confirmation-apps { gap:8px; } .simple-progress-card strong { font-size:11px; } }
+@media(prefers-reduced-motion:reduce) { .workflow-ring-value,.residual-delete-progress progress::-webkit-progress-value { transition:none; } }
+.reduce-motion .workflow-ring-value,.reduce-motion .residual-delete-progress progress::-webkit-progress-value { transition:none; }

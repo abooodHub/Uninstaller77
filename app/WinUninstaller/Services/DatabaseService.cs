@@ -7,12 +7,12 @@ namespace WinUninstaller.Services;
 
 public partial class DatabaseService
 {
-    internal const int CurrentSchemaVersion = 1;
+    internal const int CurrentSchemaVersion = 2;
     private static readonly ConcurrentDictionary<string, object> SchemaLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RequiredHistoryColumns =
     [
         "Id", "AppId", "AppName", "Publisher", "Version", "CachedIconPath", "UninstallDate", "ExitCode", "Success",
-        "Notes", "InstallerType", "ResidualStatus", "CleanedItemsCount", "CleanedSizeBytes", "Outcome", "ExitObserved"
+        "Notes", "InstallerType", "ResidualStatus", "CleanedItemsCount", "CleanedSizeBytes", "Outcome", "ExitObserved", "ResidualIdentity"
     ];
     private readonly string _connectionString;
     private readonly string _databasePath;
@@ -127,6 +127,7 @@ public partial class DatabaseService
         AddColIfNotExists("CleanedSizeBytes", "INTEGER DEFAULT 0");
         AddColIfNotExists("Outcome", "TEXT DEFAULT ''");
         AddColIfNotExists("ExitObserved", "INTEGER");
+        AddColIfNotExists("ResidualIdentity", "TEXT DEFAULT ''");
         using (var version = conn.CreateCommand())
         {
             version.Transaction = transaction;
@@ -143,7 +144,7 @@ public partial class DatabaseService
     {
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
-        return Convert.ToInt32(command.ExecuteScalar());
+        return Convert.ToInt32(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static bool NeedsMigration(SqliteConnection connection, int version)
@@ -194,9 +195,9 @@ public partial class DatabaseService
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO UninstallHistory 
-                (AppId, AppName, Publisher, Version, CachedIconPath, UninstallDate, ExitCode, Success, Notes, InstallerType, ResidualStatus, CleanedItemsCount, CleanedSizeBytes, Outcome, ExitObserved)
+                (AppId, AppName, Publisher, Version, CachedIconPath, UninstallDate, ExitCode, Success, Notes, InstallerType, ResidualStatus, CleanedItemsCount, CleanedSizeBytes, Outcome, ExitObserved, ResidualIdentity)
             VALUES 
-                ($appId, $name, $pub, $ver, $icon, $date, $exit, $success, $notes, $type, $resStatus, $resCount, $resSize, $outcome, $exitObserved);
+                ($appId, $name, $pub, $ver, $icon, $date, $exit, $success, $notes, $type, $resStatus, $resCount, $resSize, $outcome, $exitObserved, $residualIdentity);
             SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$appId", record.AppId);
@@ -214,8 +215,9 @@ public partial class DatabaseService
         cmd.Parameters.AddWithValue("$resCount", record.CleanedItemsCount);
         cmd.Parameters.AddWithValue("$resSize", record.CleanedSizeBytes);
         cmd.Parameters.AddWithValue("$outcome", record.Outcome ?? "");
+        cmd.Parameters.AddWithValue("$residualIdentity", record.ResidualIdentity ?? "");
 
-        var id = Convert.ToInt32(cmd.ExecuteScalar());
+        var id = Convert.ToInt32(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
         record.Id = id;
         return id;
     }
@@ -247,6 +249,31 @@ public partial class DatabaseService
         cmd.ExecuteNonQuery();
     }
 
+    public void UpdateResidualScanStatus(int recordId, string status)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE UninstallHistory SET ResidualStatus = $status WHERE Id = $id;";
+        cmd.Parameters.AddWithValue("$status", status); cmd.Parameters.AddWithValue("$id", recordId);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void AddResidualCleanupResult(int recordId, string status, int cleanedCount, long cleanedBytes)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE UninstallHistory SET ResidualStatus = $status,
+                CleanedItemsCount = COALESCE(CleanedItemsCount, 0) + $count,
+                CleanedSizeBytes = COALESCE(CleanedSizeBytes, 0) + $bytes WHERE Id = $id;
+            """;
+        cmd.Parameters.AddWithValue("$status", status); cmd.Parameters.AddWithValue("$count", cleanedCount);
+        cmd.Parameters.AddWithValue("$bytes", cleanedBytes); cmd.Parameters.AddWithValue("$id", recordId);
+        cmd.ExecuteNonQuery();
+    }
+
     private const string NonTestHistory = "AppId <> 'DiagnosticTestApp' COLLATE NOCASE AND substr(AppId, 1, 8) <> 'TestApp_' COLLATE NOCASE AND AppName <> 'Automated SQLite Test App' COLLATE NOCASE";
 
     public int CountHistory(bool includeTestRecords = true, long? beforeId = null)
@@ -255,7 +282,7 @@ public partial class DatabaseService
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM UninstallHistory" + HistoryConditions(cmd, includeTestRecords, beforeId);
-        return Convert.ToInt32(cmd.ExecuteScalar());
+        return Convert.ToInt32(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public List<UninstallRecord> GetHistory(bool includeTestRecords = true) =>
@@ -282,7 +309,7 @@ public partial class DatabaseService
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT Id, AppId, AppName, Publisher, Version, CachedIconPath, UninstallDate, ExitCode, Success,
-                   Notes, InstallerType, ResidualStatus, CleanedItemsCount, CleanedSizeBytes, Outcome, ExitObserved
+                   Notes, InstallerType, ResidualStatus, CleanedItemsCount, CleanedSizeBytes, Outcome, ExitObserved, ResidualIdentity
             FROM UninstallHistory
             """ + HistoryConditions(cmd, includeTestRecords, beforeId) + " ORDER BY Id DESC";
         if (limit is int pageSize)
@@ -313,7 +340,8 @@ public partial class DatabaseService
                 ResidualStatus = reader.IsDBNull(11) ? "Not Scanned" : reader.GetString(11),
                 CleanedItemsCount = reader.IsDBNull(12) ? 0 : reader.GetInt32(12),
                 CleanedSizeBytes = reader.IsDBNull(13) ? 0 : reader.GetInt64(13),
-                Outcome = reader.IsDBNull(outcomeColumn) ? "" : reader.GetString(outcomeColumn)
+                Outcome = reader.IsDBNull(outcomeColumn) ? "" : reader.GetString(outcomeColumn),
+                ResidualIdentity = reader.IsDBNull(reader.GetOrdinal("ResidualIdentity")) ? "" : reader.GetString(reader.GetOrdinal("ResidualIdentity"))
             });
         }
         return results;

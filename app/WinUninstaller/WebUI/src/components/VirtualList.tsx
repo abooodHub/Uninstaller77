@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { markFirstAppearance, virtualRange } from '../presentation'
 
-export function VirtualList({ items, render, rowHeight, className = '' }: { items: any[]; render: (item: any, index: number) => ReactNode; rowHeight: number; className?: string }) {
+type VirtualIdentity = { id?: string | number; name?: string }
+
+export function VirtualList<T>({ items, render, rowHeight, className = '' }: { items: T[]; render: (item: T, index: number) => ReactNode; rowHeight: number; className?: string }) {
   const host = useRef<HTMLDivElement>(null)
   const entered = useMemo(() => new Set<string>(), [])
   const [viewport, setViewport] = useState({ top: 0, height: 640 })
@@ -18,7 +20,8 @@ export function VirtualList({ items, render, rowHeight, className = '' }: { item
       <div style={{ height: totalHeight, position: 'relative' }}>
         {items.slice(start, end).map((item, offset) => {
           const index = start + offset
-          const stableId = Array.isArray(item) ? item[0]?.id : item?.id ?? item?.name
+          const value = item as VirtualIdentity | [VirtualIdentity]
+          const stableId = Array.isArray(value) ? value[0]?.id : value.id ?? value.name
           const key = String(stableId ?? index)
           return (
             <div key={key} className="virtual-row" style={{ height: rowHeight, transform: `translateY(${index * rowHeight}px)` }}>

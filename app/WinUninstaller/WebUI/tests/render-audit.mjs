@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 const server = await createServer({ server: { middlewareMode: true }, plugins: [{
   name: 'audit-components', enforce: 'pre', transform(code, id) {
     if (id.replaceAll('\\', '/').endsWith('/src/App.tsx'))
-      return code + '\nexport { words, defaultState, SettingsDialog, ControlPage, ExtensionsPage, HistoryPage, ResidualDialog };'
+      return code + '\nexport { words, defaultState, AppRow, WindowsAppsPage, SettingsDialog, ExtensionsPage, HistoryPage, ResidualDialog };'
   }
 }] })
 let passed = 0
@@ -16,6 +16,8 @@ const render = (Component, props) => renderToStaticMarkup(React.createElement(Co
 const check = (name, test) => { test(); passed++; console.log('PASS ' + name) }
 try {
   const ui = await server.ssrLoadModule('/src/App.tsx')
+  const { InstallationPage } = await server.ssrLoadModule('/src/components/InstallationPage.tsx')
+  const { installationWords } = await server.ssrLoadModule('/src/installation-strings.ts')
   const boundaryModule = await server.ssrLoadModule('/src/ErrorBoundary.tsx')
   check('Render failure boundary exposes a keyboard action and bilingual alert surface', () => {
     const Boundary = boundaryModule.default
@@ -28,8 +30,8 @@ try {
   })
   check('Arabic and English expose the same translation keys', () => {
     assert.deepEqual(Object.keys(ui.words.ar).sort(), Object.keys(ui.words.en).sort())
-    assert.deepEqual(Object.keys(ui.words.ar.control).sort(), Object.keys(ui.words.en.control).sort())
     assert.deepEqual(Object.keys(ui.words.ar.unregistered).sort(), Object.keys(ui.words.en.unregistered).sort())
+    assert.deepEqual(Object.keys(ui.words.ar.startup).sort(), Object.keys(ui.words.en.startup).sort())
   })
   for (const language of ['ar', 'en']) {
     const lang = ui.words[language]
@@ -43,16 +45,15 @@ try {
       assert.match(html, /aria-modal="true"/)
       assert.match(html, /tabindex="-1"/)
     })
-    check(language + ': protection warns without changing the queue outcome and only offers the wizard after completion', () => {
-      const op = { total: 1, state: 'Succeeded', protectionWarning: protection.protectionWarning,
+    check(language + ': protection preparation and warning are visible in the queue', () => {
+      const op = { total: 1, successful: 1, state: 'Succeeded', protectionWarning: protection.protectionWarning,
         protectionStage: protection.protectionPreparing, canOpenSystemRestore: true, openSystemRestore: protection.protectionOpenSystemRestore }
       const running = render(ui.ProgressDialog, { lang, run, op: { ...op, isRunning: true, preparingProtection: true } })
       assert.ok(running.includes(protection.protectionPreparing))
       assert.ok(!running.includes(protection.protectionOpenSystemRestore))
       const done = render(ui.ProgressDialog, { lang, run, op: { ...op, isRunning: false } })
       assert.ok(done.includes(protection.protectionWarning))
-      assert.ok(done.includes(protection.protectionOpenSystemRestore))
-      assert.match(done, /status-green/)
+      assert.match(done, /simple-result-summary\s*" role="status"/)
     })
     check(language + ': History separates the restore-point result from registry backup details', () => {
       const record = { id: 1, outcome: 'QueueProtection', name: protection.outcomeQueueProtection, status: protection.protectionFailed,
@@ -67,62 +68,119 @@ try {
       assert.ok(html.includes(lang.stages.NotInstalled))
       assert.match(html,/result-notinstalled/)
       assert.doesNotMatch(html,/result-failed/)
-      assert.match(html,/phase10-progress status-orange/)
-      assert.match(html,/aria-valuenow="100"/)
-      assert.match(html,/1\/2 · 50%/)
+      assert.match(html,/simple-result-summary has-failures/)
+      assert.ok(html.includes(language === 'ar' ? 'تمت إزالة 1 من 2' : 'Removed 1 of 2'))
       assert.doesNotMatch(html,/stop-queue/)
     })
     check(language + ': a previous failed application retains its visible cause after the selected next app succeeds', () => {
       const html=render(ui.ProgressDialog,{lang,run,op:{isRunning:false,state:'PartialFailure',operationState:'Failed',app:{id:'next',name:'Owned next'},failureCode:'None',total:2,processed:2,failed:1,successful:1,skipped:0,results:[{},{}],queueItems:[{app:{id:'riot',name:'Owned refusal'},state:'Failed',message:'Riot Client cannot be removed while Riot games remain installed.\nVendorDependenciesInstalled\nExit code: 0'},{app:{id:'next',name:'Owned next'},state:'Completed'}]}})
-      assert.match(html,/queue-result-reason/)
+      assert.match(html,/simple-result-reason/)
       assert.ok(html.includes(language==='ar' ? 'لا يمكن إزالة Riot Client ما دامت ألعاب Riot مثبتة.' : 'Riot Client cannot be removed while Riot games remain installed.'))
-      assert.match(html,/aria-valuenow="100"/)
-      assert.match(html,/1\/2 · 50%/)
-      assert.match(html,/queue-current-stage[^]*?state-completed|state-completed[^]*?queue-current-stage/)
+      assert.match(html,/simple-result-row result-completed/)
     })
-    check(language + ': completed queue header follows its current failed row, not the skipped remainder', () => {
+    check(language + ': completed queue distinguishes a failed program from skipped programs', () => {
       const html = render(ui.ProgressDialog, {lang,run,op:{isRunning:false,state:'PartialFailure',operationState:'Cancelled',app:{id:'owned',name:'Owned failure'},total:3,processed:1,successful:0,failed:1,skipped:2,queueItems:[{app:{id:'owned',name:'Owned failure'},state:'Failed'},{app:{id:'skip',name:'Owned skipped'},state:'Cancelled'}]}})
-      assert.match(html,new RegExp('queue-current-stage[^]*?' + lang.stages.Failed))
-      assert.match(html,/class="app-icon[^"]*variant-progress[^"]*state-failed/)
+      assert.match(html,/simple-result-row result-failed/)
+      assert.match(html,/simple-result-row result-cancelled/)
+      assert.ok(html.includes(lang.stages.Failed))
     })
     check(language + ': vendor dependency refusal is visible before opening diagnostics', () => {
-      const html=render(ui.ProgressDialog,{lang,run,op:{isRunning:false,state:'PartialFailure',failureCode:'VendorDependenciesInstalled',total:2,processed:1,failed:1,skipped:1,successful:0,queueItems:[],results:[{state:'Failed',app:{id:'owned',name:'Owned refusal'}},{state:'Skipped',app:{id:'skip',name:'Owned not started'}}]}})
-      assert.ok(html.includes(lang.vendorDependenciesInstalled))
-      assert.match(html,/aria-valuenow="100"/)
-      assert.match(html,/0\/2 · 0%/)
+      const html=render(ui.ProgressDialog,{lang,run,op:{isRunning:false,state:'PartialFailure',failureCode:'VendorDependenciesInstalled',total:2,processed:1,failed:1,skipped:1,successful:0,queueItems:[],results:[{state:'Failed',app:{id:'owned',name:'Owned refusal'},message:'Riot Client cannot be removed while Riot games remain installed.'},{state:'Skipped',app:{id:'skip',name:'Owned not started'}}]}})
+      assert.ok(html.includes(language === 'ar' ? 'لا يمكن إزالة Riot Client ما دامت ألعاب Riot مثبتة.' : 'Riot Client cannot be removed while Riot games remain installed.'))
+      assert.match(html,/simple-result-summary has-failures/)
       assert.doesNotMatch(html,/stop-queue/)
     })
+    check(language + ': protected registrations stay visible but cannot be selected or uninstalled', () => {
+      const app = { id: 'owned-protected', name: 'Owned protected fixture', canUninstall: false }
+      const html = render(ui.AppRow, { app, lang, run })
+      assert.match(html, /type="checkbox"[^>]*disabled=""/)
+      assert.doesNotMatch(html, /class="icon-action-button trash"/)
+      assert.ok(html.includes(`${lang.windowsAppsSettings}: ${app.name}`))
+      assert.ok(html.includes(lang.removalBlocked) && html.includes(lang.removalBlockedReason))
+      assert.doesNotMatch(render(ui.AppRow, { app: { ...app, canUninstall: true }, lang, run }), /disabled=""/)
+    })
+    check(language + ': Windows apps includes the All tab and excludes protected packages from its selection', () => {
+      const blocked = { id: 'protected', name: 'Protected app', source: 'MSIX', isBuiltIn: true, canUninstall: false, selected: true }
+      const removable = { id: 'removable', name: 'Removable app', source: 'MSIX', canUninstall: true, selected: true }
+      const props = { lang, run, category: 'Store', hasInventory: true, search: '' }
+      const html = render(ui.WindowsAppsPage, { ...props, items: [blocked, removable] })
+      assert.ok(html.includes(`aria-current="page">${lang.allWindowsApps}</button>`))
+      assert.match(html, /aria-label="[^"]*Protected app"[^>]*disabled=""/)
+      assert.ok(html.includes(lang.removalBlockedReason))
+      assert.match(html, /class="workspace-selection".*>\(1\)<\/bdi>/)
+      assert.doesNotMatch(render(ui.WindowsAppsPage, { ...props, items: [blocked] }), /class="workspace-selection"|class="windows-select-visible"/)
+    })
+    check(language + ': Windows Installer retry status and observed exit appear in the compact workflow', () => {
+      const app = { id: 'owned-msi', name: 'Owned MSI fixture' }
+      const op = { isRunning: true, total: 1, app, operationState: 'WaitingForMsiRetry',
+        queueItems: [{ app, state: 'WaitingForMsiRetry' }] }
+      assert.ok(render(ui.ProgressDialog, { lang, run, op }).includes(lang.stages.WaitingForMsiRetry))
+      const finished = render(ui.ProgressDialog, { lang, run, op: { ...op, isRunning: false,
+        operationState: 'Failed', failed: 1, queueItems: [], results: [{ app, state: 'Failed',
+          message: 'Windows Installer failed to remove this program.', failureCode: 'MsiInstallFailure', exitCode: 1603 }] } })
+      assert.match(finished, /<bdi dir="ltr">1603<\/bdi>/)
+      assert.ok(finished.includes(language === 'ar' ? 'تعذّر على Windows Installer إزالة هذا البرنامج.' : 'Windows Installer failed to remove this program.'))
+    })
     check(language + ': running residual maintenance freezes selection and duplicate cleanup actions', () => {
-      const html=render(ui.ResidualDialog,{lang,labels:{},run,op:{successful:1},residual:{cleaning:true,
+      const html=render(ui.ResidualDialog,{lang,labels:{},run,op:{successful:1},residual:{cleaning:true,deleteStopRequested:true,deleteCurrentPath:'C:\\Owned\\Fixture.bin',
         groups:[{app:{id:'owned',name:'Owned fixture'},offset:0,count:1,status:lang.results}],
         items:[{index:0,title:'Fixture.bin',path:'C:\\Owned\\Fixture.bin',canClean:true,selected:true}]}})
       assert.match(html,/type="checkbox"[^>]*disabled=""/)
       assert.match(html,/class="button residual-danger" disabled=""/)
       assert.match(html,/class="button quiet" disabled=""/)
-      assert.match(html, /<bdi dir="ltr">C:\\Owned\\Fixture.bin<\/bdi>/)
+      assert.match(html, /<bdi dir="ltr"[^>]*>C:\\Owned\\Fixture.bin<\/bdi>/)
       assert.match(html, new RegExp(`dir="${language === 'ar' ? 'rtl' : 'ltr'}"`))
-      assert.ok(html.includes(lang.residualDeleteSelected) && !html.includes(lang.residualDeleteConfirm))
+      assert.ok(!html.includes(lang.residualDeleteConfirm))
     })
-    check(language + ': active queue is compact and leftover scanning shows only measured locations', () => {
-      const op = { isRunning:true,state:'Running',total:4,processed:1,results:[],queueItems:[] }
+    check(language + ': empty residual review explains why there is nothing to select', () => {
+      const html = render(ui.ResidualDialog, { lang, run, residual: {
+        groups: [{ app: { id: 'cross-device', name: 'Cross Device' }, offset: 0, count: 0,
+          status: lang.noLeftovers }], items: [],
+      } })
+      assert.ok(html.includes('Cross Device') && html.includes(lang.noLeftovers))
+      assert.ok(html.includes(lang.residualNothingToDelete) && html.includes(lang.close))
+      assert.doesNotMatch(html, /type="checkbox"/)
+      assert.match(html, /class="button residual-danger" disabled=""/)
+    })
+    check(language + ': leftover selection counts only eligible items and leaves review-only rows visible', () => {
+      const file = { index: 0, title: 'owned.bin', path: 'C:\\Owned\\owned.bin', kind: 'File', canClean: true, selected: false }
+      const informational = { index: 1, title: 'Shared service', path: 'HKLM\\Shared', kind: 'Service', canClean: false, selected: true }
+      const group = { app: { id: 'owned', name: 'Owned fixture' }, offset: 0, count: 2, status: '' }
+      const mixed = render(ui.ResidualDialog, { lang, run, residual: { items: [file, informational], groups: [group] } })
+      assert.ok(mixed.includes(lang.residualSelectAll) && mixed.includes(lang.residualReviewOnly))
+      assert.match(mixed, /<bdi dir="ltr">0\/1<\/bdi>/)
+      assert.equal((mixed.match(/type="checkbox"/g) || []).length, 4)
+      assert.match(mixed, /class="button residual-danger" disabled=""/)
+
+      const selected = render(ui.ResidualDialog, { lang, run, residual: { items: [{ ...file, selected: true }, informational], groups: [group] } })
+      assert.match(selected, /<bdi dir="ltr">1\/1<\/bdi>/)
+      assert.doesNotMatch(selected, /class="button residual-danger" disabled=""/)
+
+      const reviewOnly = render(ui.ResidualDialog, { lang, run, residual: { items: [informational], groups: [{ ...group, count: 1 }] } })
+      assert.ok(reviewOnly.includes('HKLM\\Shared') && reviewOnly.includes(lang.residualNothingToDelete))
+      assert.doesNotMatch(reviewOnly, /type="checkbox"/)
+      assert.match(reviewOnly, /class="button residual-danger" disabled=""/)
+    })
+    check(language + ': active queue draws measured progress and scanning hides the ring', () => {
+      const app = { id: 'owned', name: 'Owned fixture' }
+      const op = { isRunning:true,state:'Running',total:4,processed:1,app,results:[],queueItems:[{app,state:'Running'}] }
       const running = render(ui.ProgressDialog, {lang,run,op})
-      assert.match(running, /is-compact/)
-      assert.match(running, /<details class="queue-list-section queue-disclosure">/)
+      assert.match(running, /simple-progress is-running/)
+      assert.match(running, /aria-valuenow="25"/)
       assert.equal((running.match(/role="progressbar"/g) || []).length, 1)
       assert.doesNotMatch(running, /batch-counters/)
       const scanning = render(ui.ProgressDialog, {lang,run,op:{...op,operationState:'ScanningResiduals',residual:{scannedLocations:7}}})
-      assert.ok(scanning.includes(lang.residualLocations))
-      assert.match(scanning, /<bdi dir="ltr">7<\/bdi>/)
-      assert.doesNotMatch(scanning, /role="progressbar"|stop-queue/)
+      assert.ok(scanning.includes(lang.scanLeftovers))
+      assert.doesNotMatch(scanning, /role="progressbar"/)
+      assert.match(scanning, /stop-queue"[^>]*disabled=""/)
     })
-    check(language + ': empty cleanup stays in queue results and exposes scan scope', () => {
+    check(language + ': empty cleanup stays in queue results without a delete action', () => {
       const folder = protection.residualFolderNotRecorded
       const html = render(ui.ProgressDialog, {lang, run, op:{isRunning:false,state:'Succeeded',total:1,processed:1,
         successful:1,results:[],queueItems:[],residual:{foundSelectable:false,scannedLocations:7,
           summary:[{id:'scope',name:'Owned scope fixture',status:lang.noLeftovers,folder}]}}})
-      assert.ok(html.includes(lang.residualNothingToDelete) && html.includes(folder))
-      assert.match(html, /<details class="residual-scan-summary">/)
-      assert.doesNotMatch(html, /residual-danger|residual-review/)
+      assert.match(html, /simple-result-summary\s*" role="status"/)
+      assert.doesNotMatch(html, /residual-danger|reference-result-metrics/)
     })
     check(language + ': unregistered review requires explicit consent and isolates its exact LTR scope', () => {
       const html = render(ui.UnregisteredDialog, {lang,run,review:{state:'Review',planId:'owned-review',root:'C:\\Owned\\App',target:'C:\\Owned\\App\\Owned.exe',count:1,bytes:1024,files:[{path:'Owned.exe',bytes:1024}]}})
@@ -156,9 +214,10 @@ try {
       assert.ok(html.includes(lang.unregistered.consent))
       assert.doesNotMatch(html,/data-testid="unregistered-undo"/)
     })
-    check(language + ': simplified settings preserve language choice', () => {
-      const html = render(ui.SettingsDialog, { state: { language }, lang, run })
-      assert.doesNotMatch(html, /type="checkbox"|Reduce motion|تقليل الحركة|ضبط تفضيلات العرض/)
+    check(language + ': settings expose language and the saved motion preference', () => {
+      const html = render(ui.SettingsDialog, { state: { language, reduceMotion: true }, lang, run })
+      assert.match(html, /type="checkbox"[^>]*checked=""/)
+      assert.ok(html.includes(protection.reduceMotion))
       assert.match(html, /English/); assert.match(html, /العربية/)
     })
     check(language + ': settings offer the translated product website action', () => {
@@ -167,17 +226,71 @@ try {
       assert.match(html, /<button[^>]*class="button quiet"/)
       assert.doesNotMatch(html, /https?:\/\/example|target="_self"/)
     })
-    check(language + ': support section is removed and working management tools remain', () => {
-      const html = render(ui.ControlPage, { lang, run, page: { runtime: { appVersion: '1.1.10' }, sources: [{ source: 'HKCU 64-bit', accepted: 2, errors: 0, sourceErrors: 0, elapsedMs: 1, status: 'Completed' }] }, inventory: {}, scope: { title: '', search: '', count: 0, ready: false } })
-      assert.equal((html.match(/class="control-tool"/g) || []).length, 7)
-      assert.ok(html.includes(lang.pendingDeletionTitle))
-      assert.doesNotMatch(html, /control-support|Support information|معلومات الدعم|Discovery diagnostics|تشخيص اكتشاف البرامج|Runtime information|بيئة التشغيل|HKCU 64-bit/)
-      assert.doesNotMatch(html, /Force Uninstall|File Shredder|System Restore|Unavailable advanced tools|إزالة البرامج المستعصية|تمزيق الملفات|استعادة النظام|أدوات متقدمة غير متاحة|control-advanced/)
+    check(language + ': settings offer restoration without the Tools page', () => {
+      const html = render(ui.SettingsDialog, { state: { language }, lang, run })
+      const restoreButton = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) || [])
+        .find(button => button.includes(lang.restoreLeftoverBackup))
+      assert.match(restoreButton || '', /^<button type="button" class="button quiet"/)
+    })
+    check(language + ': sidebar contains Startup apps and the existing sections', () => {
+      const original = { ...ui.defaultState }
+      try {
+        Object.assign(ui.defaultState, { language, direction: language === 'ar' ? 'rtl' : 'ltr' })
+        const html = render(ui.default, {})
+        const sidebar = html.slice(0, html.indexOf('<main'))
+        assert.equal((sidebar.match(/class="workspace-nav-button/g) || []).length, 7)
+        for (const label of [lang.programs, lang.windowsApps, lang.browserExtensions, lang.startup.title, lang.uninstallHistory, lang.settings, installationWords[language].title])
+          assert.ok(sidebar.includes(label))
+      } finally { Object.assign(ui.defaultState, original) }
+    })
+    check(language + ': installation monitoring separates observations from linked evidence and exposes the finish state', () => {
+      const monitor = installationWords[language]
+      const active = { id: 'owned', root: 'C:\\Owned', state: 'Monitoring', issues: [], count: 2, baselineFiles: 1, baselineKeys: 0, changes: [
+        { kind: 'FileEvent', change: 'Created', path: 'C:\\Owned\\background.txt', phase: 'During', association: 'Observed' },
+        { kind: 'File', change: 'Created', path: 'C:\\Owned\\Program.exe', phase: 'After', association: 'RegistrationLinked' },
+      ] }
+      const html = render(InstallationPage, { page: { busy: true, active, reports: [] }, language, run })
+      assert.ok(html.includes(monitor.states.Monitoring) && html.includes(monitor.observed) && html.includes(monitor.linked))
+      assert.ok(html.includes(monitor.cancel) && !html.includes(monitor.export))
+      assert.ok(html.includes('dir="ltr">C:\\Owned\\background.txt'))
+      const finishing = render(InstallationPage, { page: { busy: true, finishing: true, active, reports: [] }, language, run })
+      assert.ok(finishing.includes(monitor.states.Finishing))
+      assert.match(finishing, /class="button quiet" disabled=""/)
+      const completed = render(InstallationPage, { page: { busy: false, finishing: false, active: { ...active, state: 'Completed' }, reports: [] }, language, run })
+      assert.ok(completed.includes(monitor.export) && !completed.includes(monitor.cancel))
+    })
+    check(language + ': Startup apps shows real and fallback icons, scope controls, and collapsed locations', () => {
+      const original = { ...ui.defaultState }
+      try {
+        Object.assign(ui.defaultState, { language, direction: language === 'ar' ? 'rtl' : 'ltr', page: 'startup',
+          activeSidebarItem: 'StartupApps', startupPage: { scanned: true, loading: false, failedSources: 1, snapshotId: 'fixture', items: [
+            { id: 'run', name: 'Example app', source: 'Run', scope: 'Machine', location: 'HKLM\\Example', icon: 'data:image/png;base64,fixture', status: 'Enabled' },
+            { id: 'folder', name: 'Example shortcut', source: 'StartupFolder', scope: 'User', location: 'C:\\Startup\\Example.lnk', status: 'Disabled', changeToken: 'owned-fixture' },
+            { id: 'user', name: 'Example user app', source: 'Run', scope: 'User', location: 'HKCU\\Example', status: 'Enabled', changeToken: 'owned-fixture' },
+          ] } })
+        const html = render(ui.default, {})
+        const sidebar = html.slice(0, html.indexOf('<main'))
+        assert.match(sidebar, /class="workspace-nav-button active"[^>]*aria-current="page"/)
+        assert.doesNotMatch(html, /HKLM\\Example|startup-details/)
+        assert.match(html, /data-icon-source="application"/)
+        assert.match(html, /data-icon-source="unavailable"/)
+        assert.equal((html.match(/class="startup-disclosure"[^>]*aria-expanded="false"/g) || []).length, 3)
+        assert.equal((html.match(/<th scope="col"/g) || []).length, 5)
+        assert.ok(html.includes(`aria-label="${lang.startup.enable}: Example shortcut"`))
+        assert.ok(!html.includes(`aria-label="${lang.startup.disable}: Example app"`))
+        assert.match(html, /class="catalog-tab active" aria-pressed="true"/)
+        for (const label of [lang.startup.settings, lang.startup.partial, lang.startup.runKey, lang.startup.folder, lang.startup.machine, lang.startup.user])
+          assert.ok(html.includes(label))
+        assert.match(html, /type="checkbox"[^>]*disabled=""[^>]*aria-label="[^"]*Example app/)
+        assert.ok(html.includes(lang.startup.selectShown))
+        assert.ok(html.includes(lang.startup.disableAllShown + ' <bdi>(1)</bdi>'))
+        assert.doesNotMatch(html, /type="checkbox"[^>]*checked=""/)
+      } finally { Object.assign(ui.defaultState, original) }
     })
     const id = 'a'.repeat(32)
     const extension = browser => ({ browser, id, profile: 'Default', name: 'Owned shared fixture', version: '1.0', installationLocation: 'C:/owned-fixture/'+browser, enabledState: 'Installed' })
     const items = [extension('Google Chrome'), extension('Microsoft Edge'), extension('Brave')]
-    check(language + ': sidebar and page select the same first real browser without an aggregate entry', () => {
+    check(language + ': sidebar opens extensions and the page selects the first detected browser', () => {
       const original = { ...ui.defaultState }
       try {
         Object.assign(ui.defaultState, { language, direction: language === 'ar' ? 'rtl' : 'ltr', page: 'extensions', activeSidebarItem: 'BrowserExtensions', extensionsPage: { scanned: true, browsers: ['Google Chrome','Microsoft Edge','Brave'], items } })
@@ -185,7 +298,9 @@ try {
         const sidebar = html.slice(0, html.indexOf('<main'))
         assert.doesNotMatch(html, /All Extensions|كافة ملحقات المستعرض/)
         assert.equal((html.match(/class="app-row ext-row"/g) || []).length, 1)
-        assert.match(sidebar, /class="nav-sub-item active"[^>]*><span class="extension-nav-label">[^]*?Google Chrome/)
+        assert.match(sidebar, /class="workspace-nav-button active"[^>]*aria-current="page"/)
+        assert.doesNotMatch(sidebar, /Google Chrome|Microsoft Edge|Brave/)
+        assert.match(html, /role="tab" aria-selected="true"[^]*?Google Chrome/)
       } finally { Object.assign(ui.defaultState, original) }
     })
     for (const browser of ['','Google Chrome','Microsoft Edge','Brave','All']) {
@@ -200,6 +315,22 @@ try {
         assert.equal((html.match(/class="browser-icon/g) || []).length >= 3, true)
       })
     }
+    check(language + ': all supported browsers have logos and extension selection is available', () => {
+      const browsers = ['Google Chrome', 'Microsoft Edge', 'Brave', 'Opera', 'Vivaldi']
+      const html = render(ui.ExtensionsPage, {
+        page: { loading: false, scanned: true, items: browsers.map(browser => ({ ...extension(browser), managementCapability: 'Browser' })) }, lang, run,
+        selectedBrowser: 'Vivaldi', onSelectBrowser: () => {},
+      })
+      assert.equal((html.match(/<img class="browser-icon"/g) || []).length, browsers.length + 1)
+      assert.doesNotMatch(html, /browser-icon-fallback/)
+      assert.equal((html.match(/type="checkbox"/g) || []).length, 2)
+      assert.doesNotMatch(html, /type="checkbox"[^>]*disabled=""/)
+      assert.ok(html.includes(lang.selectAllExtensions))
+    })
+    check(language + ': managed extensions cannot be selected for browser actions', () => {
+      const html = render(ui.ExtensionsPage, { page: { scanned: true, items: [{ ...extension('Microsoft Edge'), managementCapability: 'Browser', isPolicyManaged: true }] }, lang, run, selectedBrowser: 'Microsoft Edge', onSelectBrowser: () => {} })
+      assert.equal((html.match(/type="checkbox"[^>]*disabled=""/g) || []).length, 2)
+    })
     check(language + ': incomplete inventory retains valid rows and warning', () => {
       const html = render(ui.ExtensionsPage, { page: { scanned: true, incomplete: true, items }, lang, run, selectedBrowser: 'All', onSelectBrowser: () => {} })
       assert.match(html, /class="extension-scan-warning" role="status"/)
@@ -237,34 +368,25 @@ try {
       assert.match(html, /class="empty-state extension-error"/)
       assert.match(html, /Fixture scan unavailable/)
     })
-    for (const [state, isRunning, tone] of [['Running',true,'blue'],['Succeeded',false,'green'],['PartialFailure',false,'orange'],['CriticalFailure',false,'red']]) {
-      check(language + ': actual queue state tone ' + state, () => {
-        const html = render(ui.ProgressDialog, { lang, run, op: { isRunning, state, total: 3, processed: 2, successful: 1, failed: 1, skipped: 0, logs: [], results: [], queueItems: [] } })
-        assert.match(html, new RegExp('phase10-progress status-'+tone))
-      })
-    }
     check(language + ': mixed queue completes its progress without inventing successful removals', () => {
       const results = ['Succeeded','Failed','Skipped','Skipped'].map((state,index)=>({state,app:{id:'owned-'+index,name:'Owned fixture '+index,icon:null}}))
       const html = render(ui.ProgressDialog, { lang, run, op: { isRunning: false, state: 'PartialFailure', total: 4, processed: 2, successful: 1, failed: 1, skipped: 2, results, queueItems: [], logs: [] } })
-      assert.equal((html.match(/role="progressbar"/g) || []).length, 1)
-      assert.match(html, /aria-valuenow="100"/)
-      assert.match(html, /<bdi dir="ltr">4\/4<\/bdi>/)
-      assert.match(html, /<bdi dir="ltr">1\/4 · 25%<\/bdi>/)
+      assert.match(html, /simple-result-summary has-failures/)
+      assert.ok(html.includes(language === 'ar' ? 'تمت إزالة 1 من 4' : 'Removed 1 of 4'))
+      assert.equal((html.match(/simple-result-row result-cancelled/g) || []).length, 2)
       assert.ok(html.includes(lang.close))
       assert.ok(!html.includes(lang.stopQueue))
-      assert.ok(html.includes(lang.queuePartial))
     })
     check(language + ': completed success follows final engine state even if a stop request was recorded', () => {
       const html = render(ui.ProgressDialog, {lang,run,op:{isRunning:false,state:'Succeeded',stopRequested:true,total:1,processed:1,successful:1,failed:0,skipped:0,results:[{app:{id:'owned',name:'Owned fixture'},state:'Succeeded'}]}})
-      assert.match(html,/phase10-progress status-green/)
-      assert.doesNotMatch(html,/stop-queue/)
-      assert.match(html,/aria-valuenow="100"/)
+      assert.match(html,/simple-result-summary\s*" role="status"/)
+      assert.doesNotMatch(html,/stop-queue|has-failures/)
     })
     check(language + ': finished no-removal queue has a visible reason and closes normally', () => {
-      const html = render(ui.ProgressDialog, {lang,run,op:{isRunning:false,needsReview:false,state:'PartialFailure',failureCode:'RemovalNotObserved',total:3,processed:1,successful:0,failed:1,skipped:2,results:[{app:{id:'owned',name:'Owned fixture'},state:'Failed'},{app:{id:'skip1',name:'Skipped one'},state:'Skipped'},{app:{id:'skip2',name:'Skipped two'},state:'Skipped'}]}})
-      assert.ok(html.includes(lang.removalNotObserved))
-      assert.match(html,/aria-valuenow="100"/)
-      assert.match(html,/0\/3 · 0%/)
+      const reason = 'Removal was not observed. The program is still registered.'
+      const html = render(ui.ProgressDialog, {lang,run,op:{isRunning:false,needsReview:false,state:'PartialFailure',failureCode:'RemovalNotObserved',total:3,processed:1,successful:0,failed:1,skipped:2,results:[{app:{id:'owned',name:'Owned fixture'},state:'Failed',message:reason},{app:{id:'skip1',name:'Skipped one'},state:'Skipped'},{app:{id:'skip2',name:'Skipped two'},state:'Skipped'}]}})
+      assert.match(html,/simple-result-reason/)
+      assert.ok(html.includes(language === 'ar' ? 'تمت إزالة 0 من 3' : 'Removed 0 of 3'))
       assert.ok(html.includes(lang.close))
       assert.doesNotMatch(html,/data-testid="queue-review-stop"|data-testid="queue-acknowledge"/)
     })
@@ -288,7 +410,7 @@ try {
       assert.doesNotMatch(real, /app-icon-fallback/)
     })
     check(language + ': exit 1605 diagnostic hides None and retains the actual localized exit field', () => {
-      const html = render(ui.ProgressDialog,{lang,run,op:{isRunning:false,state:'PartialFailure',total:2,processed:2,successful:1,failed:1,skipped:0,results:[],queueItems:[],errorDetails:'Owned diagnostic',failureCode:'None',exitCode:1605}})
+      const html = render(ui.ProgressDialog,{lang,run,op:{isRunning:false,needsReview:true,state:'NeedsUserAttention',total:2,processed:2,successful:1,failed:1,skipped:0,results:[],queueItems:[],errorDetails:'Owned diagnostic',failureCode:'None',exitCode:1605}})
       assert.doesNotMatch(html,/>None</)
       assert.match(html,/<bdi dir="ltr">1605<\/bdi>/)
       assert.ok(html.includes(lang.exitCodeLabel))
@@ -303,7 +425,7 @@ try {
     })
     check(language + ': prelaunch MSI validation failure shows diagnosis without sentinel exit', () => {
       const html = render(ui.ProgressDialog, {lang,run,op:{isRunning:false,state:'PartialFailure',operationState:'Failed',app:{id:'owned',name:'Owned invalid command'},failureCode:'InvalidMsiCommand',exitCode:null,errorDetails:'The uninstall command has no valid MSI product code.',total:1,processed:1,failed:1,successful:0,skipped:0,queueItems:[{app:{id:'owned',name:'Owned invalid command'},state:'Failed',message:'Invalid MSI product code.\nInvalidMsiCommand\nThe uninstall command has no valid MSI product code.',failureCode:'InvalidMsiCommand',exitCode:null}]}})
-      assert.match(html,/InvalidMsiCommand/)
+      assert.match(html,/simple-result-reason[^]*?MSI/)
       assert.ok(!html.includes(lang.exitCodeLabel))
       assert.doesNotMatch(html,/>-1</)
     })

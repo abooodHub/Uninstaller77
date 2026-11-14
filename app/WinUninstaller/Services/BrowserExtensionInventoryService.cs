@@ -326,7 +326,7 @@ public static partial class BrowserExtensionInventoryService
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(128).ToArray();
     }
 
-    private static IEnumerable<string> SafeDirectories(string path, Action<Exception>? diagnostic = null)
+    private static string[] SafeDirectories(string path, Action<Exception>? diagnostic = null)
     {
         try { return Directory.GetDirectories(path); }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException) { return Array.Empty<string>(); }

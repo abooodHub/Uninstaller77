@@ -19,7 +19,7 @@ public class NullImageConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => Binding.DoNothing;
 
-    private static ImageSource GeneratePlaceholder()
+    private static WriteableBitmap GeneratePlaceholder()
     {
         // 48x48 grey rounded square
         const int size = 48;

@@ -84,7 +84,7 @@ public sealed class MsixDeploymentService
     }
 
     public async Task<UninstallService.UninstallResult> RemoveAsync(InstalledApp app, TimeSpan timeout,
-        CancellationToken cancellation, IProgress<string>? progress, IProgress<UninstallOperationState>? state)
+        IProgress<string>? progress, IProgress<UninstallOperationState>? state, CancellationToken cancellation)
     {
         if (!ValidIdentity(app.Id)) return new(false, -1, VerificationStatus.StillPresent, "Invalid MSIX identity.", "Package identity is invalid.", "InvalidMsixIdentity");
         if (_pending is not null) return new(false, -3, VerificationStatus.Unknown, "Previous MSIX removal requires review.", "", "NeedsUserAttention");
@@ -113,11 +113,15 @@ public sealed class MsixDeploymentService
         {
             cancellation.ThrowIfCancellationRequested();
             var process = Process.Start(Command(script)) ?? throw new InvalidOperationException("PowerShell did not start.");
-            _pending = new(app, operation, process, process.StandardOutput.ReadToEndAsync(), process.StandardError.ReadToEndAsync());
+            // Once Windows deployment starts, cancellation becomes an observation request only.
+            // Do not cut IPC reads or kill the external deployment process mid-transaction.
+            _pending = new(app, operation, process,
+                process.StandardOutput.ReadToEndAsync(CancellationToken.None),
+                process.StandardError.ReadToEndAsync(CancellationToken.None));
             Log(app, operation, "Launched", process.Id, "");
             state?.Report(UninstallOperationState.AwaitingCompletion);
             progress?.Report($"Removing MSIX Package '{app.Name}'...");
-            try { await process.WaitForExitAsync().WaitAsync(timeout); }
+            try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(timeout, CancellationToken.None); }
             catch (TimeoutException)
             {
                 return new(false, -3, VerificationStatus.Unknown, "MSIX removal is still awaiting completion.",

@@ -9,7 +9,7 @@ namespace WinUninstaller.Services;
 public enum UninstallOperationState
 {
     Idle, Preparing, Launching, Running, AwaitingCompletion, Verifying,
-    ScanningResiduals, Completed, Failed, Cancelled, StopRequested, NeedsUserAttention, NotInstalled
+    ScanningResiduals, Completed, Failed, Cancelled, StopRequested, NeedsUserAttention, NotInstalled, Partial, WaitingForMsiRetry
 }
 
 public sealed record QueueJournalItem(string OperationId, InstalledApp App,

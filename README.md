@@ -1,16 +1,17 @@
 <p align="center"><img src="docs/site/assets/logo.png" width="112" height="112" alt="Uninstaller 77"></p>
 <h1 align="center">Uninstaller 77</h1>
 <p align="center">Windows application management, with a clear record of every uninstall attempt.</p>
-<p align="center"><b>1.0.1 Â· Windows 10 / 11 x64 Â· Arabic & English Â· MIT</b></p>
-<p align="center"><a href="https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.1/Uninstaller77-Setup.exe">Download installer</a> Â· <a href="https://abooodhub.github.io/Uninstaller77/">Product website</a> Â· <a href="README.ar.md">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</a></p>
+<p align="center"><b>Release 1 (1.0.3 preview) · Windows 10 / 11 x64 · Arabic &amp; English · MIT</b></p>
+<p align="center"><a href="https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.3/Uninstaller77-Setup.exe">Download installer</a> · <a href="https://abooodhub.github.io/Uninstaller77/">Product website</a> · <a href="README.ar.md">العربية</a></p>
 
 ## Features
 
 - **Application inventory:** search and sort Registry programs and current-user MSIX/AppX packages, with available publisher, version, size and uninstall-command information.
 - **Sequential queues:** process the applications you selected one at a time, with elapsed time, current stage and separate successful, failed and skipped counts.
 - **Per-app results:** retain observed exit codes and failure diagnostics on the correct application, including after a later item completes.
-- **Reviewed cleanup:** inspect supported leftovers after verified removal; quarantine eligible reviewed folders and restore them using recovery manifests.
-- **Browser inventory:** inspect Chrome, Edge and Brave extensions by browser and profile, with permissions and detected management policies. This feature is read-only.
+- **Reviewed cleanup:** inspect leftovers after verified removal. Eligible selected items can be cleaned, with recoverable backups for supported Registry entries.
+- **Browser extensions:** inspect extensions by browser and profile, and open supported browsers’ own management pages to make changes.
+- **Startup and installation monitoring:** review supported startup entries and enable or disable eligible ones. Record installation changes in a chosen folder and optional Registry key, then export the report.
 - **Desktop workflow:** Arabic RTL / English LTR, CSV export, local history, and an Explorer context-menu action for application shortcuts.
 
 [▶ Watch the product video](https://youtu.be/bUDDOJ_9fTo)
@@ -34,17 +35,16 @@
 </tr>
 </table>
 
-*Original development and test captures. Some show earlier navigation or controls that were later removed; current browser inventory is read-only. Queue and result previews use owned fixtures. The gallery identifies the context of each capture.*
+*Original development and test captures. The gallery identifies the context of each capture. Queue and result previews use owned fixtures.*
 
-## Install
+## Install Release 1
 
-1. Install **.NET 8 Desktop Runtime (x64)** and **Microsoft Edge WebView2 Runtime** if they are missing.
-2. Download [Uninstaller77-Setup.exe](https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.1/Uninstaller77-Setup.exe) from the release.
-3. Close any running copy before upgrading, then run Setup. The installer is English; choose Arabic or English in the app.
+1. Download [Uninstaller77-Setup.exe](https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.3/Uninstaller77-Setup.exe) from the release.
+2. Close any running copy before upgrading, then run Setup. The installer is in English. Choose Arabic or English in the app.
 
-Setup checks prerequisites before installing application files. They are not bundled. Some vendor uninstallers require a Windows UAC prompt or their own confirmation window.
+Setup bundles the .NET 10 Desktop Runtime and the WebView2 Evergreen installer. This build is unsigned. Full VMware acceptance of the new installer and the install-monitor-to-leftovers workflow is pending.
 
-Check the release asset against [SHA256SUMS.txt](https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.1/SHA256SUMS.txt):
+Check the installer against the [published SHA-256 sums](https://github.com/abooodHub/Uninstaller77/releases/download/v1.0.3/SHA256SUMS.txt).
 
 ```powershell
 Get-FileHash .\Uninstaller77-Setup.exe -Algorithm SHA256
@@ -54,11 +54,11 @@ Get-FileHash .\Uninstaller77-Setup.exe -Algorithm SHA256
 
 The app launches the registered vendor uninstaller and checks removal evidence. A queue reaching **100%** means its items have been processed; it does not mean every application was removed. A stop request prevents the next item from starting after the current operation; it does not force-kill the vendor uninstaller.
 
-The v1.0.1 engine preserves EXE uninstall commands registered under GUID-shaped keys, including the observed Google Drive layout. Third-party uninstallers can still reject an operation or require user input. Protected Windows packages and unsupported cleanup locations are not promised to be removable.
+The engine preserves registered EXE uninstall commands even under GUID-shaped keys. Third-party uninstallers may reject an operation or require user input. Windows protection can prevent removal of some packages.
 
 ## Build and verify
 
-See [BUILDING.md](docs/BUILDING.md) for a clean checkout and [TESTING.md](docs/TESTING.md) for validation scope.
+See [BUILDING.md](docs/BUILDING.md) for build instructions and [TESTING.md](docs/TESTING.md) for validation scope.
 
 ```powershell
 .\Build.ps1

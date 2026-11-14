@@ -9,7 +9,7 @@
 .unregistered-metrics { display:flex; gap:24px; border-block:1px solid var(--border); padding-block:12px; }
 .unregistered-metrics span { font-size:12px; color:var(--text-2); display:flex; gap:8px; align-items:center; }
 .unregistered-metrics bdi { font-weight:650; color:var(--text-1); }
-.unregistered-preserved { border-inline-start:3px solid #00df81; padding-inline-start:12px; }
+.unregistered-preserved { border-inline-start:3px solid var(--accent); padding-inline-start:12px; }
 .unregistered-files summary,.unregistered-technical summary { cursor:pointer; font-size:12px; color:var(--text-2); }
 .unregistered-file-list { max-height:160px; overflow:auto; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:8px; }
 .unregistered-file-list div { display:flex; gap:15px; justify-content:space-between; font-size:11px; padding:4px; }
@@ -17,12 +17,12 @@
 .unregistered-file-list bdi:last-child { white-space:nowrap; color:var(--text-3); }
 .unregistered-consent { display:flex; gap:9px; align-items:flex-start; font-size:12px; line-height:1.8; }
 .unregistered-consent input { margin-top:5px; flex:none; }
-.unregistered-status { display:flex; gap:10px; align-items:flex-start; padding:12px; border:1px solid #00df8133; background:#00df8109; border-radius:9px; }
-.unregistered-status svg { flex:none; color:#00df81; margin-top:4px; }
+.unregistered-status { display:flex; gap:10px; align-items:flex-start; padding:12px; border:1px solid var(--accent-border); background:var(--accent-soft); border-radius:9px; }
+.unregistered-status svg { flex:none; color:var(--accent); margin-top:4px; }
 .unregistered-error { padding:12px; background:#f3b3520d; border:1px solid #f3b35235; border-radius:8px; }
 .unregistered-technical code { display:block; overflow-wrap:anywhere; font-size:11px; margin-top:8px; }
 .unregistered-modal .modal-actions { flex:none; flex-wrap:wrap; }
 .unregistered-loading { display:flex; align-items:center; gap:14px; padding:24px 0; }
-.unregistered-loading svg { flex:none; color:#00df81; }
+.unregistered-loading svg { flex:none; color:var(--accent); }
 .unregistered-note { font-size:11px; color:var(--text-3); }
 @media(max-height:800px) { .unregistered-body { padding:14px 20px; gap:12px; } }

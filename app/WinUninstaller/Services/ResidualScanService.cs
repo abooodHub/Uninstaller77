@@ -8,12 +8,16 @@ namespace WinUninstaller.Services;
 /// <summary>Conservative review and reversible cleanup of a former install directory.</summary>
 public partial class ResidualScanService
 {
-    public sealed record ScanProgress(string Stage, int ScannedLocations, ResidualInstallFolderState? InstallFolder = null);
+    internal InstallationJournal? Installations { get; set; }
+    public sealed record ScanProgress(string Stage, int ScannedLocations, ResidualInstallFolderState? InstallFolder = null,
+        string? UnavailableReason = null);
     private sealed class ForwardProgress(Action<ScanProgress> report) : IProgress<ScanProgress>
     { public void Report(ScanProgress value) => report(value); }
     public record CleanResult(bool Success, int CleanedCount, long CleanedBytes, string? BackupPath, List<string> Errors);
     public record RestoreResult(bool Success, string Message);
-    private sealed record QuarantineManifest(string OriginalPath, string QuarantinePath, string AppName, DateTimeOffset CreatedUtc);
+    private sealed record QuarantineManifest(string OriginalPath, string QuarantinePath, string AppName,
+        DateTimeOffset CreatedUtc, string? Kind = null, string? Sha256 = null);
+    private static readonly JsonSerializerOptions ManifestJsonOptions = new() { WriteIndented = true };
 
     private static readonly StringComparison PathComparison = StringComparison.OrdinalIgnoreCase;
     private static readonly string[] ProtectedRoots =
@@ -46,30 +50,51 @@ public partial class ResidualScanService
         AppContext.BaseDirectory
     ];
 
-    public async Task<ResidualScanResult> ScanResidualsAsync(InstalledApp app, CancellationToken ct = default, IProgress<ScanProgress>? progress = null)
+    public Task<ResidualScanResult> ScanResidualsAsync(InstalledApp app, IProgress<ScanProgress>? progress = null,
+        CancellationToken ct = default) => ScanResidualsAsync(app, progress, false, ct);
+
+    public async Task<ResidualScanResult> ScanResidualsAsync(InstalledApp app, IProgress<ScanProgress>? progress,
+        bool deep, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested) return new(ResidualScanState.Cancelled, []);
-        if (app.Source == "MSIX" || app.InstallerType == InstallType.Msix)
-            return new(ResidualScanState.Unsupported, []);
-        if (string.IsNullOrWhiteSpace(app.RegistryKeyPath))
-            return new(ResidualScanState.NotScanned, [], "No recorded installation identity.");
+        if ((app.Source == "MSIX" || app.InstallerType == InstallType.Msix) &&
+            string.IsNullOrWhiteSpace(app.PackageFamilyName))
+            return new(ResidualScanState.Unsupported, [], "Package identity was not recorded.", Deep: deep);
+        if (string.IsNullOrWhiteSpace(app.RegistryKeyPath) && string.IsNullOrWhiteSpace(app.PackageFamilyName))
+            return new(ResidualScanState.NotScanned, [], "No recorded installation identity.", Deep: deep);
         var locations = 0;
         var folderState = ResidualInstallFolderState.NotChecked;
+        var unavailable = new List<string>();
         var measuredProgress = new ForwardProgress(value =>
         {
             locations = value.ScannedLocations;
             folderState = value.InstallFolder ?? folderState;
+            if (!string.IsNullOrWhiteSpace(value.UnavailableReason) && unavailable.Count < 32)
+                unavailable.Add(value.Stage + ": " + value.UnavailableReason);
             progress?.Report(value);
         });
         try
         {
-            var items = await Task.Run(() => CollectResiduals(app, ct, measuredProgress), ct);
-            if (locations == 0) return new(ResidualScanState.NotScanned, [], "No supported locations were checked.", InstallFolder: folderState);
+            var items = await Task.Run(() =>
+            {
+                var found = CollectResiduals(app, ct, measuredProgress);
+                if (deep) AddExpandedInformationalMatches(app, found, measuredProgress, locations, deep: true, ct: ct);
+                try
+                {
+                    if (Installations?.AddResidualEvidence(app, found, ct) > 0)
+                        measuredProgress.Report(new("Checking recorded installation changes", locations + 1));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
+                { measuredProgress.Report(new("Checking recorded installation changes", locations, UnavailableReason: ex.GetType().Name)); }
+                return found;
+            }, ct);
+            if (locations == 0) return new(ResidualScanState.NotScanned, [], "No supported locations were checked.", InstallFolder: folderState,
+                Deep: deep, UnavailableScopes: unavailable);
             return new(items.Count == 0 ? ResidualScanState.CompletedNoFindings : ResidualScanState.CompletedWithFindings, items,
-                ScannedLocations: locations, InstallFolder: folderState);
+                ScannedLocations: locations, InstallFolder: folderState, Deep: deep, UnavailableScopes: unavailable);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(ResidualScanState.Cancelled, [], ScannedLocations: locations); }
-        catch (Exception ex) { return new(ResidualScanState.Failed, [], ex.Message, locations, folderState); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new(ResidualScanState.Cancelled, [], ScannedLocations: locations, Deep: deep, UnavailableScopes: unavailable); }
+        catch (Exception ex) { return new(ResidualScanState.Failed, [], ex.Message, locations, folderState, deep, unavailable); }
     }
 
     protected virtual List<ResidualItem> CollectResiduals(InstalledApp app, CancellationToken ct, IProgress<ScanProgress>? progress)
@@ -80,7 +105,8 @@ public partial class ResidualScanService
         var folderState = InspectInstallFolder(app.InstallLocation, app);
         if (folderState is ResidualInstallFolderState.Checked or ResidualInstallFolderState.Missing) locations++;
         progress?.Report(new("Checking former install directory", locations,
-            folderState == ResidualInstallFolderState.Checked ? ResidualInstallFolderState.NotChecked : folderState));
+            folderState == ResidualInstallFolderState.Checked ? ResidualInstallFolderState.NotChecked : folderState,
+            folderState == ResidualInstallFolderState.Restricted ? "Path, registration, sharing, or access could not be verified." : null));
         if (folderState == ResidualInstallFolderState.Checked)
         {
             try
@@ -98,7 +124,7 @@ public partial class ResidualScanService
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                progress?.Report(new("Checking former install directory", locations, ResidualInstallFolderState.Restricted));
+                progress?.Report(new("Checking former install directory", locations, ResidualInstallFolderState.Restricted, ex.GetType().Name));
                 result.Add(new ResidualItem
                 {
                     Type = ResidualType.Directory, Path = Path.GetFullPath(app.InstallLocation), Confidence = ConfidenceLevel.Low,
@@ -107,10 +133,13 @@ public partial class ResidualScanService
                 });
             }
         }
-        AddInformationalMatches(app, result, progress, locations);
+        var scanned = AddInformationalMatches(app, result, progress, locations);
+        AddExpandedInformationalMatches(app, result, progress, scanned, deep: false, ct: ct);
         return result;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "The instance method remains on the residual service contract so tests and callers can use one injected service boundary.")]
     public async Task<CleanResult> CleanResidualsAsync(
         List<ResidualItem> items, InstalledApp app, bool backupRegistry = true,
         IProgress<string>? progress = null, CancellationToken ct = default)
@@ -149,10 +178,10 @@ public partial class ResidualScanService
                     var files = UnregisteredAppService.Snapshot(item.Path, ct);
                     if (UnregisteredAppService.Fingerprint(files) != item.ReviewedFingerprint)
                         throw new IOException("The reviewed directory changed. Scan again before moving it to quarantine.");
-                    var manifest = new { OriginalPath = item.Path, QuarantinePath = destination,
-                        AppName = app.Name, CreatedUtc = DateTimeOffset.UtcNow };
+                    var manifest = new QuarantineManifest(item.Path, destination, app.Name, DateTimeOffset.UtcNow,
+                        "Directory", item.ReviewedFingerprint);
                     var manifestPath = destination + ".json";
-                    File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+                    File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, ManifestJsonOptions));
                     try { UnregisteredAppService.MoveVerified(item.Path, destination, item.ReviewedFingerprint); }
                     catch
                     {
@@ -175,23 +204,28 @@ public partial class ResidualScanService
         }, ct);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "The instance method remains on the residual service contract so tests and callers can use one injected service boundary.")]
     public Task<RestoreResult> RestoreQuarantinedAsync(string manifestPath, CancellationToken ct = default) =>
+        RestoreQuarantinedAsync(manifestPath, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WinUninstaller", "Quarantine"), ct);
+
+    internal static Task<RestoreResult> RestoreQuarantinedAsync(string manifestPath, string backupDirectory, CancellationToken ct = default) =>
         Task.Run(() =>
         {
             try
             {
                 ct.ThrowIfCancellationRequested();
-                var root = Path.GetFullPath(Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "WinUninstaller", "Quarantine"));
+                var root = Path.GetFullPath(backupDirectory);
                 var fullManifest = Path.GetFullPath(manifestPath);
                 if (!IsWithin(fullManifest, root) || !fullManifest.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
                     HasReparsePointInPath(fullManifest) || new FileInfo(fullManifest).Length > 16_384)
                     return new RestoreResult(false, "Manifest is outside the quarantine folder.");
                 var manifest = JsonSerializer.Deserialize<QuarantineManifest>(File.ReadAllText(fullManifest));
+                if (manifest?.Kind is "RegistryKey" or "RegistryValue")
+                    return RegistryResidualCleanupService.Restore(fullManifest);
                 if (manifest == null || !SamePath(manifest.QuarantinePath, fullManifest[..^5]) ||
-                    !IsWithin(manifest.QuarantinePath, root) || !Directory.Exists(manifest.QuarantinePath) ||
-                    HasReparsePointInPath(manifest.QuarantinePath) ||
+                    !IsWithin(manifest.QuarantinePath, root) ||
                     !Path.IsPathFullyQualified(manifest.OriginalPath) ||
                     Directory.Exists(manifest.OriginalPath) || File.Exists(manifest.OriginalPath) ||
                     IsReservedPath(manifest.OriginalPath) ||
@@ -200,12 +234,37 @@ public partial class ResidualScanService
                 var parent = Path.GetDirectoryName(manifest.OriginalPath);
                 if (string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent) || HasReparsePointInPath(parent))
                     return new RestoreResult(false, "Restore parent is unavailable or is a reparse point.");
-                Directory.Move(manifest.QuarantinePath, manifest.OriginalPath);
-                File.Delete(fullManifest);
-                return new RestoreResult(true, $"Restored to {manifest.OriginalPath}");
+                if (manifest.Kind == "Shortcut")
+                {
+                    if (!IsDesktopShortcutLocation(manifest.OriginalPath) || !File.Exists(manifest.QuarantinePath) ||
+                        HasReparsePointInPath(manifest.QuarantinePath) ||
+                        new FileInfo(manifest.QuarantinePath).Length > 1024 * 1024 ||
+                        string.IsNullOrWhiteSpace(manifest.Sha256) ||
+                        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(manifest.QuarantinePath))) != manifest.Sha256)
+                        return new RestoreResult(false, "Shortcut backup failed identity verification.");
+                    File.Move(manifest.QuarantinePath, manifest.OriginalPath);
+                    return CompleteRestore(fullManifest, manifest.OriginalPath);
+                }
+                if (manifest.Kind is not (null or "Directory") || !Directory.Exists(manifest.QuarantinePath) ||
+                    ProtectedTrees.Any(path => Path.IsPathFullyQualified(path) && Overlaps(path, manifest.OriginalPath)) ||
+                    HasReparsePointInPath(manifest.QuarantinePath))
+                    return new RestoreResult(false, "Manifest or directory backup is invalid.");
+                var fingerprint = UnregisteredAppService.Fingerprint(UnregisteredAppService.Snapshot(manifest.QuarantinePath, ct));
+                if (manifest.Kind == "Directory" && fingerprint != manifest.Sha256)
+                    return new RestoreResult(false, "Directory backup failed identity verification.");
+                UnregisteredAppService.MoveVerified(manifest.QuarantinePath, manifest.OriginalPath, fingerprint);
+                return CompleteRestore(fullManifest, manifest.OriginalPath);
             }
             catch (Exception ex) { return new RestoreResult(false, ex.Message); }
         }, ct);
+
+    internal static RestoreResult CompleteRestore(string receipt, string destination)
+    {
+        try { File.Delete(receipt); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { return new(true, $"Restored to {destination}. Could not retire the backup receipt: {ex.Message}"); }
+        return new(true, $"Restored to {destination}");
+    }
 
     public static bool IsEligibleInstallDirectory(string? path, InstalledApp app) =>
         InspectInstallFolder(path, app) == ResidualInstallFolderState.Checked;
@@ -262,10 +321,10 @@ public partial class ResidualScanService
         return SamePath(left, right) || IsWithin(left, right) || IsWithin(right, left);
     }
 
-    private static void AddInformationalMatches(InstalledApp app, List<ResidualItem> items, IProgress<ScanProgress>? progress, int startingCount)
+    private static int AddInformationalMatches(InstalledApp app, List<ResidualItem> items, IProgress<ScanProgress>? progress, int startingCount)
     {
         var name = app.Name.Trim();
-        if (!SafeName(name)) return;
+        if (!SafeName(name)) return startingCount;
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { name };
         var versionSeparator = name.LastIndexOf(' ');
         if (versionSeparator >= 3)
@@ -314,6 +373,7 @@ public partial class ResidualScanService
             }
             progress?.Report(new($"Checking Registry hive: {hive}", scanned));
         }
+        return scanned;
 
         static bool SafeName(string candidate) => candidate.Length >= 3 && !candidate.EndsWith('.') &&
             !candidate.EndsWith(' ') && candidate.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
@@ -337,13 +397,18 @@ public partial class ResidualScanService
 
         void AddKey(string candidate)
         {
-            if (!RegistryKeyExists(candidate, suppressErrors: false) || items.Any(i => i.Path.Equals(candidate, StringComparison.OrdinalIgnoreCase))) return;
-            items.Add(new ResidualItem
+            try
             {
-                Type = ResidualType.RegistryKey, Path = candidate, Confidence = ConfidenceLevel.Low,
-                Reason = "Name match only; shared Registry data possible. Informational, not eligible for cleanup.",
-                CanClean = false, IsSelected = false
-            });
+                if (!RegistryKeyExists(candidate, suppressErrors: false) || items.Any(i => i.Path.Equals(candidate, StringComparison.OrdinalIgnoreCase))) return;
+                items.Add(new ResidualItem
+                {
+                    Type = ResidualType.RegistryKey, Path = candidate, Confidence = ConfidenceLevel.Low,
+                    Reason = "Name match only; shared Registry data possible. Informational, not eligible for cleanup.",
+                    CanClean = false, IsSelected = false
+                });
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+            { /* An unreadable key is not evidence of a residual. */ }
         }
     }
 

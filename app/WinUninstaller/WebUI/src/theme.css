@@ -1,0 +1,28 @@
+/* Shared theme. Run node tools/Sync-Theme.mjs after changing a native color. */
+:root {
+  --bg-app: #0d0f13;
+  --bg-sidebar: #111317;
+  --surface-1: #16191e;
+  --surface-2: #1c2026;
+  --surface-3: #252b31;
+  --surface-hover: #1c2228;
+  --border: #2a3037;
+  --border-subtle: #252a30;
+  --text-1: #f1f3f5;
+  --text-2: #b8bfc7;
+  --text-3: #959fa9;
+  --accent: #39d675;
+  --accent-hover: #58e389;
+  --accent-soft: #39d67516;
+  --accent-border: #39d67538;
+  --accent-ink: #07160c;
+  --green: var(--accent);
+  --green-soft: var(--accent-soft);
+  --blue: #72b7f7;
+  --orange: #f0ad75;
+  --orange-soft: #f0ad751f;
+  --red: #f28e96;
+  --red-soft: #f28e961f;
+  --control-radius: 999px;
+  --dialog-radius: 12px;
+}

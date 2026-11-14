@@ -170,6 +170,7 @@ public partial class MainViewModel : ObservableObject
             Filter = UiStrings.Get(LanguageCode, "restorePickerFilter")
         };
         if (picker.ShowDialog() != true) return;
+        if (UseWebUi) CloseSettings();
         if (_appList.IsUnregisteredBackup(picker.FileName))
         { await _appList.RestoreUnregisteredAsync(picker.FileName); return; }
         await _appList.RestoreResidualBackupAsync(picker.FileName);

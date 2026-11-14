@@ -330,6 +330,7 @@ public partial class TestRunnerService
         var failed = Fixture("Failed");
         var partial = Fixture("Partial");
         var queue = new List<InstalledApp> { first, failed, second, partial };
+        foreach (var app in queue) vm.Apps.Add(app);
         var delete = Write(first, "delete.bin");
         var keep = Write(first, "unchecked.bin");
         var changed = Write(second, "changed.bin");
@@ -347,9 +348,13 @@ public partial class TestRunnerService
         };
         var execute = vm.GetType().GetMethod("RunQueueAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         await (Task)execute.Invoke(vm, [queue, false, true, executor])!;
-        if (invoked != 4 || !vm.IsResidualOpen || !vm.ResidualReviewGroups.Select(group => group.App).SequenceEqual(new[] { first, second }) ||
+        if (invoked != 4 || !vm.IsResidualOpen || !vm.ResidualReviewGroups.Select(group => group.App).SequenceEqual([first, second]) ||
+            vm.BatchResults.Single(result => result.App == failed).State != BatchItemState.Failed ||
+            vm.BatchResults.Single(result => result.App == partial).State != BatchItemState.Partial ||
+            vm.BatchState != BatchQueueState.PartialFailure ||
+            vm.Apps.Contains(first) || vm.Apps.Contains(second) || !vm.Apps.Contains(failed) || !vm.Apps.Contains(partial) ||
             vm.ResidualItems.Count(item => item.CanClean) != 3 || vm.ResidualItems.Any(item => item.IsSelected))
-            throw new Exception("Expected only verified removals in an unchecked, grouped review.");
+            throw new Exception("Only verified removals belong in residual review; failed and partial outcomes stay in queue results.");
 
         var review = vm.ResidualReviewId!;
         var initialVersion = vm.ResidualSelectionVersion;
@@ -367,8 +372,64 @@ public partial class TestRunnerService
         var history = vm.Database.GetHistory();
         if (history.Single(record => record.AppId == first.Id).CleanedItemsCount != 1 ||
             history.Single(record => record.AppId == second.Id).CleanedItemsCount != 0 ||
-            history.Single(record => record.AppId == failed.Id).ResidualStatus != "ResidualScan:NotScanned")
+            history.Single(record => record.AppId == failed.Id).ResidualStatus != "ResidualScan:NotScanned" ||
+            history.Single(record => record.AppId == partial.Id).Outcome != "Partial" ||
+            history.Single(record => record.AppId == partial.Id).Success)
             throw new Exception("Residual deletion counts or scan status were attached to the wrong history row.");
+        vm.OpenQueueResidualReview();
+        if (!vm.IsResidualOpen || vm.ResidualItems.Any(item => item.Path == delete) ||
+            vm.ResidualItems.Any(item => item.IsSelected) || !vm.ResidualItems.Any(item => item.Path == keep))
+            throw new Exception("Results did not reopen only the remaining, unselected findings.");
+        vm.SkipResidualCleanup();
+
+        var failedScanRoot = System.IO.Path.Combine(ownedRoot, "FailedResidualScan");
+        var failedScanVm = new WinUninstaller.ViewModels.AppListViewModel(new RegistryDiscoveryService(),
+            new IconCacheService(new IconExtractionService(), System.IO.Path.Combine(failedScanRoot, "Icons")),
+            new DatabaseService(System.IO.Path.Combine(failedScanRoot, "history.db")), new UninstallService(),
+            new FailingResidualScanService(), new QueueJournal(failedScanRoot)) { UseWebUi = true };
+        var scanFailure = Fixture("ScanFailure");
+        await (Task)execute.Invoke(failedScanVm, [new List<InstalledApp> { scanFailure }, false, true,
+            new Func<InstalledApp, Task<UninstallService.UninstallResult>>(_ => Task.FromResult(
+                UninstallService.InterpretCompletedProcessResult(0, VerificationStatus.VerifiedRemoved, false)))])!;
+        if (!failedScanVm.IsResidualOpen || failedScanVm.ResidualReviewGroups.Single().Scan.State != ResidualScanState.Failed ||
+            failedScanVm.ResidualItems.Count != 0)
+            throw new Exception("A failed scan after verified removal must remain visible without selectable files.");
+        failedScanVm.SkipResidualCleanup();
+        if (vm.IsResidualOpen || !File.Exists(keep) || !File.Exists(changed))
+            throw new Exception("Skipping review changed an unselected owned file.");
+        vm.OpenQueueResidualReview();
+        if (!vm.IsResidualOpen || vm.ResidualItems.Any(item => item.IsSelected))
+            throw new Exception("Skipped findings could not be reopened without a selection.");
+        vm.SkipResidualCleanup();
+        vm.CloseProgress();
+
+        var infoName = "U77_ReviewOnly_" + Guid.NewGuid().ToString("N");
+        var infoFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), infoName);
+        Directory.CreateDirectory(infoFolder);
+        var infoFile = System.IO.Path.Combine(infoFolder, "kept.txt");
+        File.WriteAllText(infoFile, "review only");
+        try
+        {
+            var infoApp = new InstalledApp { Id = infoName, Name = infoName, Source = "Fixture",
+                RegistryKeyPath = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\" + infoName };
+            await (Task)execute.Invoke(vm, [new List<InstalledApp> { infoApp }, false, true, executor])!;
+            if (!vm.IsResidualOpen || vm.ResidualItems.Count == 0 || vm.ResidualItems.Any(item => item.CanClean || item.IsSelected))
+                throw new Exception("Informational-only scan findings bypassed the review dialog.");
+            vm.SkipResidualCleanup();
+            if (!File.Exists(infoFile)) throw new Exception("Skipping an informational finding removed its file.");
+        }
+        finally { Directory.Delete(infoFolder, recursive: true); }
+        vm.CloseProgress();
+
+        var empty = Fixture("Empty");
+        await (Task)execute.Invoke(vm, [new List<InstalledApp> { empty }, false, true, executor])!;
+        if (!vm.IsResidualOpen || vm.ResidualItems.Count != 0 || vm.ResidualReviewGroups.Single().Scan.State != ResidualScanState.CompletedNoFindings)
+            throw new Exception("An empty completed scan bypassed the requested review step.");
+        vm.SkipResidualCleanup();
+        vm.OpenQueueResidualReview();
+        if (!vm.IsResidualOpen || vm.ResidualItems.Count != 0)
+            throw new Exception("Empty scan results could not be reopened from results.");
+        vm.SkipResidualCleanup();
 
         InstalledApp Fixture(string name)
         {
@@ -392,5 +453,11 @@ public partial class TestRunnerService
             catch (InvalidDataException) { return; }
             throw new Exception("An invalid residual confirmation was accepted.");
         }
+    }
+
+    private sealed class FailingResidualScanService : ResidualScanService
+    {
+        protected override List<ResidualItem> CollectResiduals(InstalledApp app, CancellationToken ct,
+            IProgress<ResidualScanService.ScanProgress>? progress) => throw new IOException("Synthetic scan failure.");
     }
 }

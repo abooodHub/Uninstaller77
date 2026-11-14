@@ -67,6 +67,8 @@ public class IconExtractionService
     /// Handles quoted paths, environment variables, icon indices (positive and negative),
     /// and unquoted paths containing parameters.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "The instance methods form the injected icon extraction service boundary used by the cache and engine fixtures.")]
     public ImageSource? ExtractFromDisplayIcon(string displayIcon, string fallbackAppName = "")
     {
         if (string.IsNullOrWhiteSpace(displayIcon))
@@ -120,6 +122,8 @@ public class IconExtractionService
     /// Extract high-resolution icon from executable or DLL using PrivateExtractIconsW.
     /// Requests 128x128 first, then falls back to 64x64 or standard 32x32.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "The instance methods form the injected icon extraction service boundary used by the cache and engine fixtures.")]
     public ImageSource? ExtractFromExecutable(string exePath, int iconIndex = 0)
     {
         if (!File.Exists(exePath)) return null;
@@ -129,7 +133,7 @@ public class IconExtractionService
     /// <summary>
     /// Shell32 SHGetFileInfo fallback for files or folders.
     /// </summary>
-    public ImageSource? ShellIcon(string path)
+    public static ImageSource? ShellIcon(string path)
     {
         try
         {
@@ -159,7 +163,7 @@ public class IconExtractionService
     /// <summary>
     /// Uses PrivateExtractIconsW to retrieve 128x128 or 64x64 high-resolution icons directly from PE resources.
     /// </summary>
-    private static ImageSource? ExtractHighResFromPe(string filePath, int iconIndex)
+    internal static BitmapSource? ExtractHighResFromPe(string filePath, int iconIndex)
     {
         int[] targetSizes = [128, 64, 48, 32];
         foreach (var size in targetSizes)
@@ -261,7 +265,7 @@ public class IconExtractionService
     /// <summary>
     /// Converts a native HICON to a fully managed WPF BitmapSource with no remaining native dependencies.
     /// </summary>
-    private static ImageSource? HIconToImageSource(IntPtr hIcon)
+    private static BitmapSource? HIconToImageSource(IntPtr hIcon)
     {
         try
         {

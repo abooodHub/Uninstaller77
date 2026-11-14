@@ -36,7 +36,7 @@ public partial class AppListViewModel
         {
             var progress = new DispatcherProgress<string>(_dispatcher, stage =>
             { if (generation == _scanGeneration) InventoryStage = stage; });
-            var apps = await Task.Run(() => discovery.DiscoverApps(true, token, progress), token);
+            var apps = await Task.Run(() => discovery.DiscoverApps(true, progress, token), token);
             token.ThrowIfCancellationRequested();
             if (generation != _scanGeneration) return;
             _discoveryMs = clock.ElapsedMilliseconds;
@@ -49,7 +49,8 @@ public partial class AppListViewModel
             HasConfirmedInventory = true; InventoryRevision = generation;
             InventoryError = string.Join(" · ", incomplete.Select(source => source.Source));
             InventoryState = incomplete.Length > 0 ? "Partial" : apps.Count == 0 ? "Empty" : "Loaded";
-            StatusText = string.Format(UiStrings.Get(LanguageCode, "foundAppsStatus"), apps.Count, RecentCount, LargeCount, StoreCount);
+            StatusText = string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                UiStrings.Get(LanguageCode, "foundAppsStatus"), apps.Count, RecentCount, LargeCount, StoreCount);
             OnPropertyChanged(nameof(HasConfirmedInventory)); OnPropertyChanged(nameof(DiscoveryDiagnostics));
             _ = LoadMeasuredIconsAsync(generation, token);
             WriteInventoryTiming("ListReady", generation, clock.ElapsedMilliseconds);

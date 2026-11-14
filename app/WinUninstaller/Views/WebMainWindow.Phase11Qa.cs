@@ -57,14 +57,13 @@ public partial class WebMainWindow
             foreach (var language in new[] { "en", "ar" })
             {
                 _main.LanguageCode = language;
-                foreach (var page in new[] { "AllApps", "BrowserExtensions", "WindowsApps", "ControlCenter", "History", "Settings" })
+                foreach (var page in new[] { "AllApps", "BrowserExtensions", "WindowsApps", "History", "Settings" })
                 {
                     _main.IsSettingsOpen = false;
                     if (page == "BrowserExtensions") { _workspacePage = page; if (!_extensionsScanned) await ScanExtensionsAsync(); }
-                    else if (page == "ControlCenter") _workspacePage = page;
                     else { _workspacePage = null; _main.NavigateTo(page == "Settings" ? "AllApps" : page); _main.IsSettingsOpen = page == "Settings"; }
                     ScheduleState(); await Task.Delay(250);
-                    await WaitForUi(page switch { "BrowserExtensions" => "extensions", "ControlCenter" => "control", "History" => "history", _ => "apps" }, language, page == "Settings");
+                    await WaitForUi(page switch { "BrowserExtensions" => "extensions", "History" => "history", _ => "apps" }, language, page == "Settings");
                     if (page == "History")
                     {
                         var expected = JsonSerializer.Serialize(UiStrings.Get(language, "residualScanUnsupported"));

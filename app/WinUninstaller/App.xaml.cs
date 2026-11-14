@@ -7,9 +7,12 @@ using WinUninstaller.ViewModels;
 
 namespace WinUninstaller;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The desktop mutex is disposed by the Exit handler; the installer lifetime mutex intentionally remains valid until Windows closes the process handle after WPF teardown.")]
 public partial class App : Application
 {
     private Mutex? _desktopMutex;
+    private DesktopActivationService? _desktopActivation;
     // Every process loading the payload (including shell and test launches) must
     // prevent replacement. Let Windows close this handle on process termination,
     // after WPF/WebView2 and their mapped assemblies have finished tearing down.
@@ -23,7 +26,7 @@ public partial class App : Application
     {
         DispatcherUnhandledException += (_, args) => LogCrash("DispatcherUnhandledException", args.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-            LogCrash("AppDomain.UnhandledException", args.ExceptionObject as Exception ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown fatal exception"));
+            LogCrash("AppDomain.UnhandledException", args.ExceptionObject as Exception ?? new InvalidOperationException(args.ExceptionObject?.ToString() ?? "Unknown fatal exception"));
         TaskScheduler.UnobservedTaskException += (_, args) => LogCrash("TaskScheduler.UnobservedTaskException", args.Exception);
         Exit += (_, args) => LogRuntime($"Exit code={args.ApplicationExitCode}; Environment.ExitCode={Environment.ExitCode}");
     }
@@ -112,7 +115,6 @@ public partial class App : Application
             return;
         }
 
-        if (!shellUninstallShortcut)
         {
             var mutexName = @"Local\Uninstaller77.Desktop";
 #if DEBUG
@@ -121,10 +123,23 @@ public partial class App : Application
             _desktopMutex = new Mutex(true, mutexName, out var firstDesktopInstance);
             if (!firstDesktopInstance)
             {
-                MessageBox.Show("Uninstaller 77 is already open. / Uninstaller 77 مفتوح بالفعل.", "Uninstaller 77");
-                Shutdown(0); return;
+                var request = shellUninstallShortcut
+                    ? new DesktopActivationRequest("shell-uninstall", Path.GetFullPath(args[2]))
+                    : new DesktopActivationRequest("activate");
+                var forwarded = DesktopActivationService.TryForwardAsync(request).GetAwaiter().GetResult();
+                if (!forwarded)
+                    MessageBox.Show("The existing Uninstaller 77 window could not receive the request. / تعذر إرسال الطلب إلى نافذة Uninstaller 77 المفتوحة.", "Uninstaller 77");
+                _desktopMutex.Dispose();
+                _desktopMutex = null;
+                Shutdown(forwarded ? 0 : 1);
+                return;
             }
-            Exit += (_, _) => { _desktopMutex.ReleaseMutex(); _desktopMutex.Dispose(); };
+            Exit += (_, _) =>
+            {
+                _desktopActivation?.Dispose();
+                _desktopMutex.ReleaseMutex();
+                _desktopMutex.Dispose();
+            };
         }
         QueueJournal? fixtureJournal = null;
 #if DEBUG
@@ -185,14 +200,20 @@ public partial class App : Application
         ConfigureWindowLifetime(window, appListVm);
 
         window.Show();
+        _desktopActivation = new DesktopActivationService(request => window.Dispatcher.InvokeAsync(async () =>
+        {
+            BringDesktopWindowToFront(window);
+            if (request.Operation == "shell-uninstall" && request.ShortcutPath is not null)
+                await appListVm.PromptUninstallFromShortcutAsync(request.ShortcutPath);
+        }).Task.Unwrap());
         LogRuntime($"MainWindow shown; type={window.GetType().FullName}; handle={new System.Windows.Interop.WindowInteropHelper(window).Handle}; process={Environment.ProcessPath}");
 
 #if DEBUG
         // Explicit fixture mode contains no executable uninstall commands.
         if (args.Contains("--ui-attention-test"))
             _ = appListVm.ShowAttentionFixtureAsync();
-        else if (args.Contains("--ui-preview-queue") || args.Contains("--ui-preview-queue-ar"))
-            appListVm.ShowSyntheticQueuePreview();
+        else if (args.Contains("--ui-preview-queue") || args.Contains("--ui-preview-queue-ar") || args.Contains("--ui-preview-running"))
+            appListVm.ShowSyntheticQueuePreview(args.Contains("--ui-preview-running"), args.Contains("--ui-preview-count=2") ? 2 : args.Contains("--ui-preview-count=3") ? 3 : 4);
         else
 #endif
         {
@@ -224,6 +245,16 @@ public partial class App : Application
             }
 #endif
         }
+    }
+
+    private static void BringDesktopWindowToFront(Window window)
+    {
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        if (!window.IsVisible) window.Show();
+        window.Activate();
+        window.Topmost = true;
+        window.Topmost = false;
+        window.Focus();
     }
 
     internal static void ConfigureWindowLifetime(Window window, AppListViewModel appListVm)

@@ -34,7 +34,8 @@ public class RegistryDiscoveryService
             TimedOut, Cancelled, _watch.ElapsedMilliseconds, Messages.Take(20).ToArray(), SourceErrors);
     }
 
-    public List<InstalledApp> DiscoverApps(bool includeMsix = true, CancellationToken cancellationToken = default, IProgress<string>? progress = null)
+    public List<InstalledApp> DiscoverApps(bool includeMsix = true, IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var apps = new Dictionary<string, InstalledApp>(StringComparer.OrdinalIgnoreCase);
         var diagnostics = new List<DiscoveryDiagnostic>();
@@ -179,6 +180,7 @@ public class RegistryDiscoveryService
             EstimatedSizeKB = GetInt(sub, "EstimatedSize"),
             InstallDate = GetStr(sub, "InstallDate").Trim(),
             IsSystemComponent = false,
+            IsRemovalBlocked = sub.GetValue("NoRemove") is 1 or 1L,
             Source = "Registry",
             Architecture = arch,
             RegistryHive = hiveName,
@@ -278,6 +280,8 @@ public class RegistryDiscoveryService
                 var loc = el.TryGetProperty("InstallLocation", out var locProp) ? locProp.GetString() ?? "" : "";
                 var fullName = el.TryGetProperty("PackageFullName", out var fnProp) ? fnProp.GetString() ?? "" : "";
                 var famName = el.TryGetProperty("PackageFamilyName", out var famProp) ? famProp.GetString() ?? "" : "";
+                if (!MsixDeploymentService.ValidIdentity(fullName)) { scan.Skipped++; return; }
+                var blocked = el.TryGetProperty("NonRemovable", out var removal) && removal.ValueKind == JsonValueKind.True;
 
                 var cleanName = FormatPackageDisplayName(rawName);
                 if (cleanName.All(char.IsDigit)) { scan.Skipped++; return; }
@@ -292,8 +296,9 @@ public class RegistryDiscoveryService
                     Publisher = publisher,
                     Version = version,
                     InstallLocation = loc,
-                    UninstallString = $"powershell.exe -NoProfile -Command \"Remove-AppxPackage -Package '{fullName}'\"",
-                    QuietUninstallString = $"powershell.exe -NoProfile -Command \"Remove-AppxPackage -Package '{fullName}'\"",
+                    UninstallString = blocked ? "" : $"powershell.exe -NoProfile -Command \"Remove-AppxPackage -Package '{fullName}'\"",
+                    QuietUninstallString = blocked ? "" : $"powershell.exe -NoProfile -Command \"Remove-AppxPackage -Package '{fullName}'\"",
+                    IsRemovalBlocked = blocked,
                     Source = "MSIX",
                     PackageFamilyName = famName,
                     Architecture = fullName.Contains("x64") ? "64-bit" : (fullName.Contains("x86") ? "32-bit" : "Neutral"),
@@ -326,7 +331,7 @@ public class RegistryDiscoveryService
     internal static ProcessStartInfo CreateMsixQueryStartInfo() => new()
     {
         FileName = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
-        Arguments = "-NoProfile -NonInteractive -Command \"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $ErrorActionPreference='Stop'; Get-AppxPackage -ErrorAction Stop | Where-Object { -not $_.IsFramework -and $_.NonRemovable -ne $true } | Select-Object Name, Publisher, Version, InstallLocation, PackageFullName, PackageFamilyName | ConvertTo-Json -Compress\"",
+        Arguments = "-NoProfile -NonInteractive -Command \"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $ErrorActionPreference='Stop'; Get-AppxPackage -ErrorAction Stop | Where-Object { -not $_.IsFramework -and -not $_.IsResourcePackage } | Select-Object Name, Publisher, Version, InstallLocation, PackageFullName, PackageFamilyName, NonRemovable | ConvertTo-Json -Compress\"",
         UseShellExecute = false, CreateNoWindow = true,
         RedirectStandardOutput = true, RedirectStandardError = true,
         StandardOutputEncoding = System.Text.Encoding.UTF8,

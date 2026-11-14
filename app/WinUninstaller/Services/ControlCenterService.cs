@@ -9,6 +9,8 @@ namespace WinUninstaller.Services;
 public static class ControlCenterService
 {
     public const string WindowsAppsSettingsUri = "ms-settings:appsfeatures";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
     public sealed record RuntimeInfo(string AppVersion, string DotNetVersion, string WebViewVersion, string OperatingSystem);
     public sealed record SourceInfo(string Source, int Scanned, int Accepted, int Errors, int SourceErrors,
         bool TimedOut, bool Cancelled, long ElapsedMs, string Status);
@@ -59,7 +61,6 @@ public static class ControlCenterService
         var report = new SupportReport(1, DateTimeOffset.UtcNow, "Uninstaller 77", runtime,
             inventory with { Applications = inventory.Confirmed ? inventory.Applications : null },
             queue, visibleHistoryRecords, includesTestHistory);
-        return JsonSerializer.Serialize(report, new JsonSerializerOptions
-        { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true });
+        return JsonSerializer.Serialize(report, JsonOptions);
     }
 }

@@ -71,7 +71,7 @@ public partial class AppListViewModel
         NotifyLanguageStrings(); NotifyQueueLabels();
         OnPropertyChanged(nameof(OpenSystemRestoreLabel)); OnPropertyChanged(nameof(ProtectionWarning));
         if (BatchResults.Count > 0)
-            BatchResults = new ObservableCollection<BatchResultDisplay>(BatchResults.Select(r => ToBatchDisplay(new BatchItemResult(r.App, r.State, r.Message))));
+            BatchResults = new ObservableCollection<BatchResultDisplay>(BatchResults.Select(r => ToBatchDisplay(new BatchItemResult(r.App, r.State, r.Message, r.ExitCode, r.FailureCode))));
     }
     partial void OnCurrentCategoryChanged(AppCategory value) { ApplyFilterAndSort(); NotifyLanguageStrings(); }
 
@@ -107,6 +107,7 @@ public partial class AppListViewModel
 
     public int BatchSuccessful => BatchResults.Count(r => r.State == BatchItemState.Succeeded);
     public int BatchFailed => BatchResults.Count(r => r.State == BatchItemState.Failed);
+    public int BatchPartial => BatchResults.Count(r => r.State == BatchItemState.Partial);
     public int BatchSkipped => BatchResults.Count(item => item.State == BatchItemState.Skipped);
     public string BatchStateLabel => UiStrings.Get(LanguageCode, BatchState switch { BatchQueueState.Succeeded => "queueSucceeded", BatchQueueState.PartialFailure or BatchQueueState.CompletedWithSkips => "queuePartial", BatchQueueState.CriticalFailure => "queueCritical", BatchQueueState.Stopped => "queueStopped", BatchQueueState.NeedsUserAttention => "queueNeedsAttention", _ => "queueRunning" });
     public string BatchSuccessfulLabel => UiStrings.Get(LanguageCode, "successful");
@@ -139,10 +140,10 @@ public partial class AppListViewModel
 
     public bool IsAllVisibleSelected
     {
-        get => Apps.Count > 0 && Apps.All(app => app.IsBatchSelected);
+        get => Apps.Any(app => app.CanUninstall) && Apps.All(app => !app.CanUninstall || app.IsBatchSelected);
         set
         {
-            foreach (var app in Apps) app.IsBatchSelected = value;
+            foreach (var app in Apps) app.IsBatchSelected = value && app.CanUninstall;
             OnPropertyChanged();
         }
     }
@@ -151,33 +152,36 @@ public partial class AppListViewModel
     {
         value.CollectionChanged += (_, _) =>
         {
-            OnPropertyChanged(nameof(BatchSuccessful)); OnPropertyChanged(nameof(BatchFailed)); OnPropertyChanged(nameof(BatchSkipped));
+            OnPropertyChanged(nameof(BatchSuccessful)); OnPropertyChanged(nameof(BatchPartial)); OnPropertyChanged(nameof(BatchFailed)); OnPropertyChanged(nameof(BatchSkipped));
         };
-        OnPropertyChanged(nameof(BatchSuccessful)); OnPropertyChanged(nameof(BatchFailed)); OnPropertyChanged(nameof(BatchSkipped));
+        OnPropertyChanged(nameof(BatchSuccessful)); OnPropertyChanged(nameof(BatchPartial)); OnPropertyChanged(nameof(BatchFailed)); OnPropertyChanged(nameof(BatchSkipped));
     }
 
     private BatchResultDisplay ToBatchDisplay(BatchItemResult result) => new(result.App, result.State, result.Message,
-        UiStrings.Get(LanguageCode, result.State switch { BatchItemState.Succeeded => "successful", BatchItemState.Failed => "failed", BatchItemState.NeedsAttention => "queueNeedsAttention", BatchItemState.Cancelled => "cancelled", _ => "skipped" }),
-        (Brush)Application.Current.FindResource(result.State switch { BatchItemState.Succeeded => "AccentGreen", BatchItemState.Failed => "AccentRed", _ => "AccentPeach" }));
+        UiStrings.Get(LanguageCode, result.State switch { BatchItemState.Succeeded => "successful", BatchItemState.Partial => "partial", BatchItemState.Failed => "failed", BatchItemState.NeedsAttention => "queueNeedsAttention", BatchItemState.Cancelled => "cancelled", _ => "skipped" }),
+        (Brush)Application.Current.FindResource(result.State switch { BatchItemState.Succeeded => "AccentGreen", BatchItemState.Failed => "AccentRed", _ => "AccentPeach" }),
+        result.ExitCode, result.FailureCode);
 
     private string LocalizeEngineProgress(string message, InstalledApp app)
     {
+        if (message == "Windows Installer is busy. Waiting briefly before one retry.") return UiStrings.Get(LanguageCode, "engineWaitingForMsiRetry");
         if (message.StartsWith("Removed orphaned desktop shortcuts:", StringComparison.Ordinal)) return message.Replace("Removed orphaned desktop shortcuts:", UiStrings.Get(LanguageCode, "engineShortcutsRemoved"), StringComparison.Ordinal);
         if (message == "Some desktop shortcuts were kept for review.") return UiStrings.Get(LanguageCode, "engineShortcutsKept");
         if (message == "The uninstall launcher exited; waiting for related processes to finish...") return UiStrings.Get(LanguageCode, "engineWaitingDescendants");
         if (message == "External browser handoff was verified; the browser can remain open.") return UiStrings.Get(LanguageCode, "engineExternalBrowser");
-        if (message.StartsWith("Preparing uninstallation for", StringComparison.OrdinalIgnoreCase)) return string.Format(UiStrings.Get(LanguageCode, "enginePreparing"), app.Name);
-        if (message.StartsWith("Launching uninstaller for", StringComparison.OrdinalIgnoreCase)) return string.Format(UiStrings.Get(LanguageCode, "engineLaunching"), app.Name);
+        if (message.StartsWith("Preparing uninstallation for", StringComparison.OrdinalIgnoreCase)) return string.Format(System.Globalization.CultureInfo.CurrentCulture, UiStrings.Get(LanguageCode, "enginePreparing"), app.Name);
+        if (message.StartsWith("Launching uninstaller for", StringComparison.OrdinalIgnoreCase)) return string.Format(System.Globalization.CultureInfo.CurrentCulture, UiStrings.Get(LanguageCode, "engineLaunching"), app.Name);
         if (message.StartsWith("Uninstaller running (PID:", StringComparison.OrdinalIgnoreCase)) return message.Replace("Uninstaller running (PID:", UiStrings.Get(LanguageCode, "engineRunningPid"), StringComparison.Ordinal);
         if (message.StartsWith("Uninstaller exited with code", StringComparison.OrdinalIgnoreCase)) return message.Replace("Uninstaller exited with code", UiStrings.Get(LanguageCode, "engineExitedCode"), StringComparison.Ordinal);
         if (message.StartsWith("Verifying uninstallation status", StringComparison.OrdinalIgnoreCase)) return UiStrings.Get(LanguageCode, "engineVerifying");
-        if (message.StartsWith("Removing MSIX Package", StringComparison.OrdinalIgnoreCase)) return string.Format(UiStrings.Get(LanguageCode, "engineRemovingMsix"), app.Name);
+        if (message.StartsWith("Removing MSIX Package", StringComparison.OrdinalIgnoreCase)) return string.Format(System.Globalization.CultureInfo.CurrentCulture, UiStrings.Get(LanguageCode, "engineRemovingMsix"), app.Name);
         return message;
     }
 
     private string LocalizeResidualStage(string stage)
     {
         if (stage.StartsWith("Checking former install directory", StringComparison.OrdinalIgnoreCase)) return UiStrings.Get(LanguageCode, "scanFormerDirectory");
+        if (stage == "Checking recorded installation changes") return UiStrings.Get(LanguageCode, "scanInstallationLog");
         if (stage.StartsWith("Checking folder location:", StringComparison.OrdinalIgnoreCase)) return $"{UiStrings.Get(LanguageCode, "scanFolderLocation")}: {stage["Checking folder location:".Length..].Trim()}";
         if (stage.StartsWith("Checking Registry hive:", StringComparison.OrdinalIgnoreCase)) return $"{UiStrings.Get(LanguageCode, "scanRegistryHive")}: {stage["Checking Registry hive:".Length..].Trim()}";
         if (stage.StartsWith("No registry locations", StringComparison.OrdinalIgnoreCase)) return UiStrings.Get(LanguageCode, "noRegistryLocations");

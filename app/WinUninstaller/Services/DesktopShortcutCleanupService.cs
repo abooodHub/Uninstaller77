@@ -61,6 +61,8 @@ internal sealed class DesktopShortcutCleanupService
         return new(app.RegistryKeyPath, found.ToArray());
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "The instance method is part of the injectable cleanup service contract used by isolated engine fixtures.")]
     internal Result Complete(Snapshot snapshot, bool success, VerificationStatus verification)
     {
         if (!success || verification != VerificationStatus.VerifiedRemoved ||

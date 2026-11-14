@@ -1,13 +1,14 @@
 export const hostOperations = [
   'getState', 'navigate', 'refresh', 'search', 'sort', 'category',
-  'closeUnregistered', 'confirmUnregistered', 'retryUnregisteredDelete', 'reviewPendingDeletion',
+  'reviewProgramFile', 'closeUnregistered', 'confirmUnregistered', 'retryUnregisteredDelete', 'reviewPendingDeletion',
+  'startInstallationRecording', 'finishInstallationRecording', 'cancelInstallationRecording', 'exportInstallationRecording',
   'selectAll', 'selectApp', 'openDetails', 'closeDetails', 'promptUninstall',
   'cancelConfirm', 'setUninstallOptions', 'confirmUninstall', 'cancelProgress',
-  'closeProgress', 'stopBatch', 'runBatch', 'selectResidual', 'selectAllResiduals',
-  'deselectAllResiduals', 'skipResiduals', 'deleteReviewedResiduals', 'restoreQuarantine',
-  'setLanguage', 'setQueueProtection', 'openSystemRestore', 'loadHistory', 'changeHistoryPage', 'setShowTestRecords',
-  'openHistoryDetails', 'closeHistoryDetails', 'clearHistory', 'openSettings', 'closeSettings', 'openProductWebsite',
-  'scanExtensions', 'exportApps',
+  'closeProgress', 'stopBatch', 'runBatch', 'openResidualReview', 'selectResidual', 'selectAllResiduals',
+  'deselectAllResiduals', 'selectResidualGroup', 'skipResiduals', 'stopResidualCleanup', 'deleteReviewedResiduals', 'restoreQuarantine',
+  'setLanguage', 'setReduceMotion', 'setQueueProtection', 'openSystemRestore', 'loadHistory', 'changeHistoryPage', 'setShowTestRecords',
+  'openHistoryDetails', 'closeHistoryDetails', 'rescanHistoryResiduals', 'clearHistory', 'openSettings', 'closeSettings', 'openProductWebsite',
+  'scanExtensions', 'openExtensionManager', 'scanStartupApps', 'setStartupEnabled', 'setStartupBatchEnabled', 'openStartupSettings', 'exportApps',
   'refreshControlCenter', 'openControlFolder', 'openWindowsAppsSettings', 'exportSupportReport',
   'retryQueueVerification', 'reviewQueue', 'openQueueReview', 'acknowledgeQueueReview', 'inventoryRendered', 'performanceMark'
 ] as const

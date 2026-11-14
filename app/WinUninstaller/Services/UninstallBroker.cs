@@ -22,6 +22,12 @@ internal static class UninstallBroker
     internal const string Switch = "--uninstall-broker";
     private const string Prefix = "Uninstaller77.Uninstall.";
     private const int MaxFrame = 32768;
+    private static readonly string[] RegistrationHives = ["HKCU", "HKLM"];
+    private static readonly string[] RegistrationRoots =
+    [
+        @"Software\Microsoft\Windows\CurrentVersion\Uninstall\",
+        @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\"
+    ];
     private static readonly JsonSerializerOptions Json = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     internal sealed record Request(string RegistryPath, bool Quiet, string Executable, string Arguments);
     internal sealed record Message(string State, int? ProcessId = null, int? ExitCode = null, string? Error = null,
@@ -180,8 +186,7 @@ internal static class UninstallBroker
     internal static bool IsRegistrationPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 4096) return false;
-        return new[] { "HKCU", "HKLM" }.Any(hive => new[] { @"Software\Microsoft\Windows\CurrentVersion\Uninstall\",
-            @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\" }.Any(root =>
+        return RegistrationHives.Any(hive => RegistrationRoots.Any(root =>
             path.StartsWith(hive + "\\" + root, StringComparison.OrdinalIgnoreCase) &&
             path[(hive.Length + 1 + root.Length)..] is { Length: > 0 } name && !name.Contains('\\')));
     }
@@ -262,5 +267,7 @@ internal static class UninstallBroker
     [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe, out uint processId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1838:Avoid StringBuilder parameters for P/Invokes",
+        Justification = "QueryFullProcessImageNameW writes into a bounded mutable UTF-16 buffer used to authenticate the broker peer.")]
     private static extern bool QueryFullProcessImageName(SafeProcessHandle process, uint flags, StringBuilder name, ref int size);
 }

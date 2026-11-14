@@ -109,7 +109,7 @@ public partial class HistoryViewModel : ObservableObject
         ShowPage(page);
     }
 
-    private void ShowPage(IReadOnlyList<UninstallRecord> page)
+    private void ShowPage(List<UninstallRecord> page)
     {
         CloseDetails();
         Records = new ObservableCollection<HistoryItemViewModel>(page.Take(PageSize)
@@ -206,7 +206,8 @@ public partial class HistoryItemViewModel : ObservableObject
         Record.AppName.Equals("Automated SQLite Test App", StringComparison.OrdinalIgnoreCase);
     public string ResidualStatus => Protection is not null ? Protection.RegistryText(LanguageCode)
         : Record.ResidualStatus.StartsWith("ResidualPermanent:", StringComparison.Ordinal)
-        ? string.Format(UiStrings.Get(LanguageCode, "residualHistoryDeleted"), Record.CleanedItemsCount)
+        ? string.Format(System.Globalization.CultureInfo.CurrentCulture,
+            UiStrings.Get(LanguageCode, "residualHistoryDeleted"), Record.CleanedItemsCount)
         : Record.ResidualStatus.StartsWith("ResidualScan:", StringComparison.Ordinal)
         ? UiStrings.Get(LanguageCode, Record.ResidualStatus == "ResidualScan:Scanning" ? "residualScanIncomplete" : "residualScan" + Record.ResidualStatus[13..])
         : Record.InstallerType.Contains("MSIX", StringComparison.OrdinalIgnoreCase) && Record.ResidualStatus.StartsWith("Clean", StringComparison.OrdinalIgnoreCase)

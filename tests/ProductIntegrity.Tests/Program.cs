@@ -16,6 +16,9 @@ var assembly = typeof(UninstallService).Assembly;
 foreach (var type in new[] { "SoftwareHealthEngine", "SoftwareHealthService", "AdvancedInstallMonitorService", "InstallMonitorService", "FileShredderService", "SystemRestoreService", "TestRunnerService" })
     Check(assembly.GetType("WinUninstaller.Services." + type) is null, "Shipping assembly excludes " + type);
 Check(assembly.GetType("WinUninstaller.Models.InstallMonitorSession") is null, "Shipping assembly excludes monitor models");
+Check(assembly.GetType("WinUninstaller.Services.InstallationRecorder") is not null, "Shipping assembly contains the bounded installation recorder");
+foreach (var operation in new[] { "startInstallationRecording", "finishInstallationRecording", "cancelInstallationRecording", "exportInstallationRecording" })
+    Check(WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "monitor", op = operation, payload = new { } }), out _, out _), "Shipping bridge recognizes " + operation);
 var placeholderConvertBack = new WinUninstaller.Converters.NullImageConverter().ConvertBack(
     new object(), typeof(object), null!, System.Globalization.CultureInfo.InvariantCulture);
 Check(ReferenceEquals(placeholderConvertBack, System.Windows.Data.Binding.DoNothing),
@@ -33,8 +36,11 @@ Check(typeof(DatabaseService).GetField("BeforeSchemaCommitForTests",
 foreach (var method in new[] { "RunVisualQaAsync", "RunPhase11QaAsync", "RunAttentionQaAsync" })
     Check(typeof(WinUninstaller.Views.WebMainWindow).GetMethod(method,
         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance) is null, "Shipping window excludes " + method);
-foreach (var operation in new[] { "toggleView", "manageExtensionInBrowser", "setReduceMotion", "scanHealth", "scanMonitor", "shredPath", "forceUninstall" })
+foreach (var operation in new[] { "toggleView", "manageExtensionInBrowser", "scanHealth", "scanMonitor", "shredPath", "forceUninstall" })
     Check(!WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "integrity", op = operation, payload = new { } }), out _, out _), "Shipping bridge denies " + operation);
+
+Check(WebUiProtocol.TryParse("{\"id\":\"motion\",\"op\":\"setReduceMotion\",\"payload\":{\"enabled\":true}}", out var motion, out _) &&
+    motion?.Payload.GetProperty("enabled").ValueKind == JsonValueKind.True, "Shipping bridge accepts the reduce-motion preference");
 
 Check(WebUiProtocol.TryParse("{\"id\":\"website\",\"op\":\"openProductWebsite\",\"payload\":{}}", out _, out _), "Product website action accepts an empty payload");
 foreach (var payload in new[] { "{\"url\":\"https://example.invalid\"}", "{\"path\":\"C:\\\\Windows\\\\notepad.exe\"}", "{\"arguments\":\"--uninstall\"}", "{\"url\":\"\",\"url\":\"\"}" })

@@ -7,10 +7,12 @@ namespace WinUninstaller.Services;
 /// <summary>Local-only diagnosis. No export, deployment, removal, or queue resume.</summary>
 public static class DiagnosticExportService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
     public static async Task<string> CollectAsync()
     {
         var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller");
-        var folder = Path.Combine(data, "Diagnostics", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
+        var folder = Path.Combine(data, "Diagnostics", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture));
         Directory.CreateDirectory(folder);
         var processes = new List<object>();
         foreach (var process in Process.GetProcessesByName("WinUninstaller"))
@@ -20,7 +22,7 @@ public static class DiagnosticExportService
                 catch (Exception ex) { processes.Add(new { process.Id, error = ex.Message }); }
         }
         File.WriteAllText(Path.Combine(folder, "environment.json"), JsonSerializer.Serialize(new
-        { timestamp = DateTimeOffset.UtcNow, os = Environment.OSVersion.ToString(), collector = Environment.ProcessPath, processes }, new JsonSerializerOptions { WriteIndented = true }));
+        { timestamp = DateTimeOffset.UtcNow, os = Environment.OSVersion.ToString(), collector = Environment.ProcessPath, processes }, JsonOptions));
         var details = new List<string>();
         var log = Path.Combine(data, "Logs", "webview.log");
         if (File.Exists(log))
@@ -40,7 +42,7 @@ public static class DiagnosticExportService
                 var query = item.App.Source == "MSIX" || item.App.InstallerType == Models.InstallType.Msix
                     ? await MsixDeploymentService.QueryAsync(item.App.Id) : null;
                 File.WriteAllText(Path.Combine(folder, "affected-operation.json"), JsonSerializer.Serialize(new
-                { item.OperationId, appId = item.App.Id, item.App.Source, item.State, item.ExitCode, item.Message, query }, new JsonSerializerOptions { WriteIndented = true }));
+                { item.OperationId, appId = item.App.Id, item.App.Source, item.State, item.ExitCode, item.Message, query }, JsonOptions));
                 details.Add(item.App.Id + "\n" + item.Message);
                 if (query is not null) details.Add(query.FailureCode + ": " + query.Error + "\nState: " + query.Verification);
             }

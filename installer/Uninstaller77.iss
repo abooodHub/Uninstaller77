@@ -20,6 +20,8 @@
   #error Supply the signed WebView2 installer through Build-Release.ps1.
 #endif
 
+#include "Theme.iss"
+
 [Setup]
 #ifdef U77SignToolName
 SignTool={#U77SignToolName}
@@ -41,14 +43,14 @@ ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.14393
 DisableWelcomePage=no
 DisableDirPage=no
+DisableReadyPage=yes
 DisableProgramGroupPage=yes
 UsePreviousAppDir=yes
 UsePreviousTasks=no
 ShowLanguageDialog=no
-LanguageDetectionMethod=none
 UsePreviousLanguage=no
 WizardStyle=modern dark includetitlebar
-WizardSizePercent=110
+WizardSizePercent=150
 SetupIconFile=..\app\WinUninstaller\Resources\Brand\Uninstaller77.ico
 UninstallDisplayIcon={app}\Uninstaller77.exe
 WizardImageFile=Artwork\welcome.bmp
@@ -69,6 +71,12 @@ Uninstallable=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+english.FinishedHeadingLabel=Installation complete
+english.FinishedLabel=Uninstaller 77 is ready to use.
+english.FinishedLabelNoIcons=Uninstaller 77 is ready to use.
+english.ClickFinish=
 
 [CustomMessages]
 english.StepWelcome=Welcome
@@ -92,6 +100,10 @@ english.PayloadNotWritable=Setup cannot safely update this file because it is in
 Name: "desktopicon"; Description: "{cm:DesktopShortcut}"
 
 [Files]
+Source: "Artwork\workflow-welcome.png"; Flags: dontcopy
+Source: "Artwork\workflow-done.png"; Flags: dontcopy
+Source: "Artwork\workflow-install-en.png"; Flags: dontcopy
+Source: "Artwork\workflow-finish-en.png"; Flags: dontcopy
 Source: "{#WebView2Installer}"; DestName: "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Flags: dontcopy
 #include PayloadInstallList
 
@@ -107,20 +119,10 @@ Type: files; Name: "{app}\legacy-shortcuts.ini"
 
 [Code]
 var
-  StepText: TNewStaticText;
-  StepGauge: TNewProgressBar;
-  DataPolicyText: TNewStaticText;
-  TimerID, TargetStep: LongWord;
-  HeaderOffset, HeaderNameTop, HeaderDescriptionTop: Integer;
-  Animate: Boolean;
+  InstallButton, FinishButton: TBitmapButton;
+  CustomInstallButton: TNewButton;
+  CustomInstall: Boolean;
   RestoreShortcutPaths, RestoreShortcutBackups: TArrayOfString;
-
-function SetTimer(hWnd, nIDEvent, uElapse, lpTimerFunc: LongWord): LongWord;
-  external 'SetTimer@user32.dll stdcall';
-function KillTimer(hWnd, nIDEvent: LongWord): Boolean;
-  external 'KillTimer@user32.dll stdcall';
-function SystemParametersInfo(Action, Param: LongWord; var Value: LongWord; Flags: LongWord): Boolean;
-  external 'SystemParametersInfoW@user32.dll stdcall';
 
 #include "PayloadPreflight.iss"
 #include "LegacyRuntime.iss"
@@ -155,97 +157,126 @@ begin
   Result := CheckApplicationFiles;
 end;
 
-procedure StepTick(Wnd: HWND; Msg: UINT; Event, Tick: LongWord);
-var Delta, Movement: Integer;
+procedure AdvanceWizard(Sender: TObject);
 begin
-  if not Assigned(StepGauge) then Exit;
-  Delta := Integer(TargetStep) - StepGauge.Position;
-  if Delta <> 0 then begin
-    Movement := Delta;
-    if Movement < 0 then Movement := -Movement;
-    Movement := Movement div 4;
-    if Movement < 1 then Movement := 1;
-    if Delta < 0 then Movement := -Movement;
-    StepGauge.Position := StepGauge.Position + Movement;
-  end;
-  if HeaderOffset > 0 then begin
-    HeaderOffset := HeaderOffset - 1;
-    WizardForm.PageNameLabel.Top := HeaderNameTop + HeaderOffset;
-    WizardForm.PageDescriptionLabel.Top := HeaderDescriptionTop + HeaderOffset;
-  end;
-  if (StepGauge.Position = Integer(TargetStep)) and (HeaderOffset = 0) then begin
-    KillTimer(0, TimerID);
-    TimerID := 0;
-  end;
+  WizardForm.NextButton.OnClick(WizardForm.NextButton);
 end;
 
-procedure InitializeWizard;
-var WindowsAnimations: LongWord; Preferences: AnsiString; CleanPreferences: String;
+procedure StartCustomInstall(Sender: TObject);
 begin
-  WindowsAnimations := 1;
-  SystemParametersInfo($1042, 0, WindowsAnimations, 0);
-  Animate := WindowsAnimations <> 0;
-  HeaderNameTop := WizardForm.PageNameLabel.Top;
-  HeaderDescriptionTop := WizardForm.PageDescriptionLabel.Top;
-  if LoadStringFromFile(ExpandConstant('{localappdata}\WinUninstaller\settings.json'), Preferences) then begin
-    CleanPreferences := String(Preferences);
-    StringChangeEx(CleanPreferences, ' ', '', True);
-    if Pos('"reduceMotion":true', CleanPreferences) > 0 then Animate := False;
-  end;
-  StepText := TNewStaticText.Create(WizardForm);
-  StepText.Parent := WizardForm;
-  StepText.SetBounds(ScaleX(20), WizardForm.ClientHeight - ScaleY(62), WizardForm.ClientWidth - ScaleX(40), ScaleY(18));
-  StepText.Anchors := [akLeft, akRight, akBottom];
-  StepText.Font.Color := $0081DF00;
-  StepGauge := TNewProgressBar.Create(WizardForm);
-  StepGauge.Parent := WizardForm;
-  StepGauge.SetBounds(ScaleX(20), WizardForm.ClientHeight - ScaleY(44), ScaleX(190), ScaleY(3));
-  StepGauge.Anchors := [akLeft, akBottom];
-  StepGauge.Min := 0; StepGauge.Max := 600;
-  DataPolicyText := TNewStaticText.Create(WizardForm);
-  DataPolicyText.Parent := WizardForm.FinishedPage;
-  DataPolicyText.Caption := CustomMessage('DataPolicy');
-  DataPolicyText.WordWrap := True;
-  DataPolicyText.SetBounds(WizardForm.FinishedLabel.Left, WizardForm.FinishedLabel.Top + ScaleY(80), WizardForm.FinishedLabel.Width, ScaleY(72));
+  CustomInstall := True;
+  AdvanceWizard(Sender);
+end;
+
+procedure StartDefaultInstall(Sender: TObject);
+begin
+  CustomInstall := False;
+  AdvanceWizard(Sender);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := ((PageID = wpSelectDir) or (PageID = wpSelectTasks)) and not CustomInstall;
+end;
+
+procedure CenterControl(Control: TControl; ParentWidth, Top, Width, Height: Integer);
+begin
+  Control.SetBounds((ParentWidth - ScaleX(Width)) div 2, ScaleY(Top), ScaleX(Width), ScaleY(Height));
+end;
+
+function SetupArt(Parent: TWinControl; const FileName: String; Top, Size: Integer): TBitmapImage;
+var ImagePath: String;
+begin
+  ImagePath := ExpandConstant('{tmp}\') + FileName;
+  if not FileExists(ImagePath) then ExtractTemporaryFile(FileName);
+  Result := TBitmapImage.Create(WizardForm);
+  Result.Parent := Parent;
+  CenterControl(Result, Parent.ClientWidth, Top, Size, Size);
+  Result.Stretch := True;
+  Result.PngImage.LoadFromFile(ImagePath);
+end;
+
+function SetupButton(Parent: TWinControl; const FileName, Caption: String; Top: Integer): TBitmapButton;
+begin
+  ExtractTemporaryFile(FileName);
+  Result := TBitmapButton.Create(WizardForm);
+  Result.Parent := Parent;
+  CenterControl(Result, Parent.ClientWidth, Top, 220, 50);
+  Result.BackColor := {#ThemeCanvas};
+  Result.Caption := Caption;
+  Result.Cursor := crHand;
+  Result.Stretch := True;
+  Result.PngImage.LoadFromFile(ExpandConstant('{tmp}\') + FileName);
+end;
+
+procedure CenterSetupLabel(LabelControl: TNewStaticText; ParentWidth, Top, Height, FontSize: Integer; Color: TColor);
+begin
+  LabelControl.AutoSize := False;
+  LabelControl.StyleElements := [];
+  LabelControl.WordWrap := True;
+  LabelControl.Alignment := taCenter;
+  LabelControl.Font.Name := 'Segoe UI';
+  LabelControl.Font.Size := FontSize;
+  LabelControl.Font.Style := [];
+  LabelControl.Font.Color := Color;
+  LabelControl.SetBounds(ScaleX(20), ScaleY(Top), ParentWidth - ScaleX(40), ScaleY(Height));
+end;
+
+#include "InstallProgress.iss"
+
+procedure InitializeWizard;
+var WelcomeWidth, FinishedWidth: Integer;
+begin
+  WizardForm.StyleElements := WizardForm.StyleElements - [seClient];
+  WizardForm.InnerPage.StyleElements := [];
+  WizardForm.WelcomePage.StyleElements := [];
+  WizardForm.FinishedPage.StyleElements := [];
+  WizardForm.Color := {#ThemeCanvas};
+  WizardForm.InnerPage.Color := {#ThemeCanvas};
+  WizardForm.WelcomePage.Color := {#ThemeCanvas};
+  WizardForm.FinishedPage.Color := {#ThemeCanvas};
+  WizardForm.WizardBitmapImage.Visible := False;
+  WizardForm.WizardBitmapImage2.Visible := False;
+  WizardForm.Bevel.Visible := False;
+  WelcomeWidth := WizardForm.WelcomePage.ClientWidth;
+  FinishedWidth := WizardForm.FinishedPage.ClientWidth;
+  SetupArt(WizardForm.WelcomePage, 'workflow-welcome.png', 58, 120);
+  SetupArt(WizardForm.FinishedPage, 'workflow-done.png', 95, 110);
+  CenterSetupLabel(WizardForm.WelcomeLabel1, WelcomeWidth, 208, 44, 19, {#ThemeText});
+  WizardForm.WelcomeLabel1.Caption := 'Welcome to Uninstaller 77 {#AppVersion}';
+  CenterSetupLabel(WizardForm.WelcomeLabel2, WelcomeWidth, 251, 56, 10, {#ThemeMuted});
+  WizardForm.WelcomeLabel2.Caption := 'Choose Install to continue.';
+  InstallButton := SetupButton(WizardForm.WelcomePage, 'workflow-install-en.png', 'Install', 318);
+  InstallButton.OnClick := @StartDefaultInstall;
+  CustomInstallButton := TNewButton.Create(WizardForm);
+  CustomInstallButton.Parent := WizardForm.WelcomePage;
+  CustomInstallButton.Caption := 'Custom Install';
+  CenterControl(CustomInstallButton, WelcomeWidth, 378, 135, 25);
+  CustomInstallButton.OnClick := @StartCustomInstall;
+
+  CenterSetupLabel(WizardForm.FinishedHeadingLabel, FinishedWidth, 223, 44, 19, {#ThemeText});
+  CenterSetupLabel(WizardForm.FinishedLabel, FinishedWidth, 270, 61, 10, {#ThemeMuted});
+  FinishButton := SetupButton(WizardForm.FinishedPage, 'workflow-finish-en.png', 'Finish', 360);
+  FinishButton.OnClick := @AdvanceWizard;
+  CenterControl(WizardForm.RunList, FinishedWidth, 420, 240, 54);
+
+  InitializeInstallProgress;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
-var Step: Integer; Caption: String;
+var Installing: Boolean;
 begin
-  Step := 1; Caption := CustomMessage('StepWelcome');
-  case CurPageID of
-    wpSelectDir: begin Step := 2; Caption := CustomMessage('StepLocation'); end;
-    wpSelectTasks: begin Step := 3; Caption := CustomMessage('StepOptions'); end;
-    wpReady: begin Step := 4; Caption := CustomMessage('StepReady'); end;
-    wpInstalling: begin Step := 5; Caption := CustomMessage('StepInstall'); end;
-    wpFinished: begin Step := 6; Caption := CustomMessage('StepDone'); end;
+  Installing := CurPageID = wpInstalling;
+  WizardForm.OuterNotebook.Visible := not Installing;
+  ShowInstallProgress(Installing);
+  WizardForm.CancelButton.Visible := (CurPageID <> wpWelcome) and (CurPageID <> wpFinished) and not Installing;
+  if CurPageID = wpWelcome then begin
+    WizardForm.NextButton.Visible := False;
+    WizardForm.ActiveControl := InstallButton;
+  end else if CurPageID = wpFinished then begin
+    WizardForm.NextButton.Visible := False;
+    WizardForm.ActiveControl := FinishButton;
   end;
-  StepText.Caption := Format('%d / 6  ·  %s', [Step, Caption]);
-  TargetStep := Step * 100;
-  if TimerID <> 0 then begin
-    KillTimer(0, TimerID);
-    TimerID := 0;
-  end;
-  HeaderOffset := 0;
-  WizardForm.PageNameLabel.Top := HeaderNameTop;
-  WizardForm.PageDescriptionLabel.Top := HeaderDescriptionTop;
-  if Animate then begin
-    HeaderOffset := ScaleY(6);
-    WizardForm.PageNameLabel.Top := HeaderNameTop + HeaderOffset;
-    WizardForm.PageDescriptionLabel.Top := HeaderDescriptionTop + HeaderOffset;
-    TimerID := SetTimer(0, 0, 16, CreateCallback(@StepTick));
-  end;
-  if TimerID = 0 then begin
-    HeaderOffset := 0;
-    StepGauge.Position := TargetStep;
-    WizardForm.PageNameLabel.Top := HeaderNameTop;
-    WizardForm.PageDescriptionLabel.Top := HeaderDescriptionTop;
-  end;
-end;
-
-procedure DeinitializeSetup;
-begin
-  if TimerID <> 0 then KillTimer(0, TimerID);
 end;
 
 procedure MigrateOwnedShortcut(Path: String);
@@ -354,6 +385,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var Version: String;
 begin
   if CurStep <> ssPostInstall then Exit;
+  ShowInstallVerification;
   if not GetVersionNumbersString(ExpandConstant('{app}\Uninstaller77.exe'), Version) or
      (Version <> '{#AppVersion}.0') then
     RaiseException('Installed EXE version verification failed. Expected {#AppVersion}.0; found ' + Version);
@@ -362,7 +394,6 @@ begin
      (CompareText(GetSHA256OfFile(ExpandConstant('{app}\wwwroot\index.html')), '{#ExpectedUiSha}') <> 0) then
     RaiseException('Installed payload verification failed. Setup cannot confirm this installation.');
   Log('VERIFIED Uninstaller 77 {#AppVersion}; path=' + ExpandConstant('{app}'));
-  WizardForm.FinishedLabel.Caption := 'Uninstaller 77 {#AppVersion}' + #13#10 + ExpandConstant('{app}') + #13#10#13#10 + WizardForm.FinishedLabel.Caption;
   MigrateOwnedShortcut(ExpandConstant('{userdesktop}\Uninstaller77.lnk'));
   MigrateOwnedShortcut(ExpandConstant('{userdesktop}\Uninstaller 77.lnk'));
   MigrateOwnedShortcut(ExpandConstant('{userdesktop}\WinUninstaller.lnk'));

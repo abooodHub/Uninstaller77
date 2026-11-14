@@ -58,6 +58,8 @@ node tests/render-audit.mjs
 
 The React UI uses the version declared in the C# project. The public assembly is `Uninstaller77`; internal namespaces and the existing AppData identity remain `WinUninstaller` for compatibility.
 
+Edit shared colors in `app/WinUninstaller/WebUI/src/theme.css`, then run `node tools/Sync-Theme.mjs` from the checkout root. The web test command checks that the WPF constants and Inno Setup include match the CSS.
+
 ## Product website
 
 `docs/site/` is buildless HTML/CSS/JavaScript with local images. Local preview:

@@ -1,4 +1,6 @@
 using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
 
 namespace WinUninstaller.Services;
 
@@ -6,6 +8,29 @@ internal static class UninstallRegistration
 {
     internal enum Presence { Unknown, Present, Absent }
     internal sealed record Observation(Presence State, string Error = "");
+
+    internal static long? ReadLastWrite(string path)
+    {
+        if (!UninstallBroker.IsRegistrationPath(path)) return null;
+        try
+        {
+            using var hive = RegistryKey.OpenBaseKey(path.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase)
+                ? RegistryHive.CurrentUser : RegistryHive.LocalMachine,
+                Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default);
+            using var key = hive.OpenSubKey(path[5..], writable: false);
+            return key is null ? null : ReadLastWrite(key.Handle);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
+        { return null; }
+    }
+
+    internal static long? ReadLastWrite(SafeRegistryHandle key) =>
+        RegQueryInfoKey(key, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, out var lastWrite) == 0 && lastWrite > 0 ? lastWrite : null;
+
+    [DllImport("advapi32.dll", EntryPoint = "RegQueryInfoKeyW", ExactSpelling = true)]
+    private static extern int RegQueryInfoKey(SafeRegistryHandle key, IntPtr keyClass, IntPtr classLength, IntPtr reserved,
+        IntPtr subKeyCount, IntPtr maxSubKeyLength, IntPtr maxClassLength, IntPtr valueCount, IntPtr maxValueNameLength,
+        IntPtr maxValueLength, IntPtr securityDescriptorLength, out long lastWrite);
 
     // The same read-only identity boundary is used before launch, for completion
     // verification and by the review UI. Access errors are never called presence

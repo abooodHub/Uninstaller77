@@ -42,6 +42,9 @@ public partial class AppListViewModel
             IsCleaningResiduals = false;
             IsCurrentOperationIndeterminate = false;
             IsResidualOpen = false;
+            LastResidualDeletedCount = cleanResult.CleanedCount;
+            LastResidualKeptCount = cleanResult.Errors.Count;
+            LastResidualDeletedBytes = cleanResult.CleanedBytes;
 
             // Persist a language-neutral status; the UI renders the stored counts in its current language.
             string status = FormattableString.Invariant($"Quarantined {cleanResult.CleanedCount} items ({cleanResult.CleanedBytes / 1024.0 / 1024.0:F1} MB)");
@@ -51,7 +54,8 @@ public partial class AppListViewModel
                 _db.AppendRecordNote(LastInsertedRecordId, status + "\n" + string.Join("\n", cleanResult.Errors));
             }
 
-            string msg = string.Format(UiStrings.Get(LanguageCode, "residualReviewComplete"), cleanResult.CleanedCount, cleanResult.CleanedBytes / 1024.0 / 1024.0);
+            string msg = string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                UiStrings.Get(LanguageCode, "residualReviewComplete"), cleanResult.CleanedCount, cleanResult.CleanedBytes / 1024.0 / 1024.0);
             if (!string.IsNullOrEmpty(cleanResult.BackupPath))
             {
                 msg += $"\n• {UiStrings.Get(LanguageCode, "quarantineManifest")}: {cleanResult.BackupPath}";

@@ -19,7 +19,8 @@ internal sealed record QueueProtectionReport(ProtectionStep Restore, RegistryBac
         var succeeded = Backups.Count(item => item.Result.Status == "Succeeded");
         var failed = Backups.Count(item => item.Result.Status == "Failed");
         var disabled = Backups.Length - succeeded - failed;
-        return string.Format(UiStrings.Get(language, "protectionExportCounts"), succeeded, failed, disabled);
+        return string.Format(System.Globalization.CultureInfo.CurrentCulture,
+            UiStrings.Get(language, "protectionExportCounts"), succeeded, failed, disabled);
     }
 
     internal string Details(string language) => string.Join(Environment.NewLine, new[] { PointName }.Where(name => name is not null).Concat(Backups.Select(item =>

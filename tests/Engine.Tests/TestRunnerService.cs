@@ -78,6 +78,28 @@ public partial class TestRunnerService
             }
         });
 
+        await RunTest("Desktop shell requests reuse the current process channel", results, logger, async () =>
+        {
+            var pipeName = "Uninstaller77.EngineTests.Activation." + Guid.NewGuid().ToString("N");
+            var received = new TaskCompletionSource<DesktopActivationRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var service = new DesktopActivationService(request =>
+            {
+                received.TrySetResult(request);
+                return Task.CompletedTask;
+            }, pipeName);
+            var shortcut = Path.Combine(Path.GetTempPath(), "Owned Activation " + Guid.NewGuid().ToString("N") + ".lnk");
+            var forwarded = await DesktopActivationService.TryForwardAsync(
+                new DesktopActivationRequest("shell-uninstall", shortcut), pipeName).WaitAsync(TimeSpan.FromSeconds(7));
+            var request = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            if (!forwarded || request.Operation != "shell-uninstall" || request.ShortcutPath != shortcut)
+                throw new Exception("The current-user activation channel did not preserve the shell request.");
+
+            var invalid = await DesktopActivationService.TryForwardAsync(
+                new DesktopActivationRequest("shell-uninstall", @"..\relative.lnk"), pipeName).WaitAsync(TimeSpan.FromSeconds(7));
+            if (invalid) throw new Exception("The activation channel accepted a relative shortcut path.");
+            return "A bounded current-user pipe delivered the absolute shortcut request; a relative path was rejected and no second UI was created.";
+        });
+
         // Test 1: Registry Discovery Engine
         await RunTest("Registry Discovery Engine", results, logger, () =>
         {

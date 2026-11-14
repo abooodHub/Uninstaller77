@@ -43,11 +43,17 @@ function Add-Target([string]$Relative, [string]$Reason, [bool]$Generated = $true
 # Fixed, reviewable output roots. No recursive search for every directory named bin.
 foreach ($relative in @(
     'app\WinUninstaller\bin', 'app\WinUninstaller\obj',
+    'app\WinUninstaller\WebUI\dist',
     'tests\Engine.Tests\bin', 'tests\Engine.Tests\obj',
     'tests\ProductIntegrity.Tests\bin', 'tests\ProductIntegrity.Tests\obj',
     'tests\ControlCenter.Tests\bin', 'tests\ControlCenter.Tests\obj',
+    'tests\RegistryResidual.PolicyTests\bin', 'tests\RegistryResidual.PolicyTests\obj',
     '_build\AuditCandidate', '_build\Phase13', '_build\Phase14', '_build\Phase14_1', '_build\Phase14_1_Details',
     '_build\cleanup-build-validation',
+    '_build\release-stage-2537c1295a914dfcb3e9599f93bfa414',
+    '_build\release-stage-85c2d3ef413643e0bfdb9dfda1ba64fb',
+    '_build\release-stage-ad12bcdae77f42058e5b1c792c031d78',
+    '_build\release-stage-f2df75ee1f1e46cfa9bad9098d904077',
     'dist\Phase11', 'dist\Phase12', 'dist\Phase13', 'dist\Phase14', 'dist\Phase14_1', 'dist\Phase14_1_Details',
     'app\WinUninstaller\WebUI\node_modules\.vite', 'app\WinUninstaller\WebUI\node_modules\.vite-temp',
     'app\WinUninstaller\WebUI\node_modules\.tmp'

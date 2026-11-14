@@ -2,6 +2,21 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { localizeText, localizeState, queueProgress, inventoryCount, historyTimestamp, browserGroups, resolveExtensionBrowser, extensionIdentity, extensionPermissionImpact, virtualRange, markFirstAppearance, verifiedQueuePercent, reconcileSearch, residualScanStatusText, historyOutcome, queueFailureReason, queueFailureInfo } from '../src/presentation.ts'
 
+test('Leftover coverage explains the unavailable scope in Arabic and preserves technical paths', () => {
+  const scope = 'Checking former install directory: Path, registration, sharing, or access could not be verified.'
+  const path = String.raw`Checking accessible user profiles: C:\Users\Owned\Registry: IOException`
+  const residual = {
+    groups: [{ coverageIssues: [scope, path] }],
+    summary: [{ coverageIssues: [scope] }],
+  }
+  const state = { language: 'ar', appsPage: { residual }, historyPage: {} }
+  const translated = localizeState(state).appsPage.residual
+  const expected = 'مجلد التثبيت السابق: تعذّر التحقق من المسار أو التسجيل أو الاستخدام المشترك أو إمكانية الوصول.'
+  assert.deepEqual(translated.groups?.[0].coverageIssues, [expected, 'ملفات تعريف المستخدمين المتاحة: C:\\Users\\Owned\\Registry: IOException'])
+  assert.deepEqual(translated.summary?.[0].coverageIssues, [expected])
+  assert.deepEqual(localizeState({ ...state, language: 'en' }).appsPage.residual.groups?.[0].coverageIssues, [scope, path])
+})
+
 test('Desktop shortcut cleanup messages keep actual counts and translate in both directions', () => {
   for (const text of ['Removed orphaned desktop shortcuts: 2.', 'Some desktop shortcuts were kept for review.']) {
     const arabic = localizeText(text, 'ar')

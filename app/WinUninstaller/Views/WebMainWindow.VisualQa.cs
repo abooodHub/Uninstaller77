@@ -10,6 +10,14 @@ public partial class WebMainWindow
     private bool _visualQaStarted;
     private async Task RunVisualQaAsync()
     {
+#if DEBUG
+        if (Environment.GetCommandLineArgs().Contains("--residual-qa"))
+        { await RunResidualQaAsync(); return; }
+        if (Environment.GetCommandLineArgs().Contains("--confirm-progress-qa"))
+        { await RunConfirmProgressQaAsync(); return; }
+        if (Environment.GetCommandLineArgs().Contains("--progress-qa"))
+        { await RunProgressQaAsync(); return; }
+#endif
         if (Environment.GetCommandLineArgs().Contains("--ui-phase11-test"))
         { await RunPhase11QaAsync(); return; }
         if (Environment.GetCommandLineArgs().Contains("--ui-attention-test"))
@@ -40,7 +48,7 @@ public partial class WebMainWindow
                 await Capture("programs-list-" + suffix);
                 foreach (var app in _apps.Apps.Take(3)) app.IsBatchSelected = true;
                 ScheduleState(); await Task.Delay(150);
-                await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.bulk-bar-top .button.primary')?.click()");
+                await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.workspace-selection .button.primary')?.click()");
                 await Task.Delay(350);
                 await Capture("confirmation-" + suffix);
                 // Close the confirmation only. Never click its destructive primary action.
@@ -51,10 +59,9 @@ public partial class WebMainWindow
                 _main.IsSettingsOpen = false;
                 if (audit || size.Item1 == 1920)
                 {
-                    foreach (var page in new[] { "BrowserExtensions", "WindowsApps", "ControlCenter", "History" })
+                    foreach (var page in new[] { "BrowserExtensions", "WindowsApps", "History" })
                     {
                         if (page == "BrowserExtensions") { _workspacePage = page; if (!_extensionsScanned) await ScanExtensionsAsync(); }
-                        else if (page == "ControlCenter") _workspacePage = page;
                         else { _workspacePage = null; _main.NavigateTo(page); }
                         ScheduleState(); await Task.Delay(300);
                         await Capture(page.ToLowerInvariant() + "-" + suffix);
@@ -101,6 +108,113 @@ public partial class WebMainWindow
                 browserHeight = Browser.ActualHeight, layout });
         }
     }
+
+#if DEBUG
+    private async Task RunResidualQaAsync()
+    {
+        if (_visualQaStarted) return;
+        _visualQaStarted = true;
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "ResidualQA", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture) + "-" + Environment.ProcessId);
+        Directory.CreateDirectory(folder);
+        try
+        {
+            foreach (var language in new[] { "ar", "en" })
+            {
+                _main.LanguageCode = language;
+                _apps.ShowSyntheticResidualReviewPreview();
+                ScheduleState(); await Task.Delay(500);
+                var collapsed = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({groups:document.querySelectorAll('.residual-group').length,openGroups:document.querySelectorAll('.residual-group[open]').length,selected:document.querySelectorAll('.residual-row input:checked').length,eligible:document.querySelectorAll('.residual-row input').length,found:document.querySelectorAll('.residual-row').length,deleteDisabled:document.querySelector('.residual-footer .residual-danger')?.disabled})");
+                File.WriteAllText(Path.Combine(folder, "collapsed-" + language + ".json"), collapsed);
+                using (var image = File.Create(Path.Combine(folder, "collapsed-" + language + ".png")))
+                    await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+                await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const group=document.querySelector('.residual-group'); group.open=true; const list=document.querySelector('.residual-list'); list.scrollTop=list.scrollHeight; const path=group.querySelector('.residual-path-details'); path.open=true; })()");
+                await Task.Delay(200);
+                var scrolled = await Browser.CoreWebView2.ExecuteScriptAsync("(() => {const dialog=document.querySelector('.residual-review'),head=dialog.querySelector('.modal-header').getBoundingClientRect(),list=dialog.querySelector('.residual-list').getBoundingClientRect(),foot=dialog.querySelector('.residual-footer').getBoundingClientRect();return JSON.stringify({scrollTop:dialog.querySelector('.residual-list').scrollTop,scrollHeight:dialog.querySelector('.residual-list').scrollHeight,clientHeight:dialog.querySelector('.residual-list').clientHeight,headVisible:head.top>=0&&head.bottom<=innerHeight,footerVisible:foot.top>=0&&foot.bottom<=innerHeight,listBetween:head.bottom<=list.top&&list.bottom<=foot.top,pathVisible:!!dialog.querySelector('.residual-path-details[open] code')})})()");
+                File.WriteAllText(Path.Combine(folder, "scrolled-" + language + ".json"), scrolled);
+                using (var image = File.Create(Path.Combine(folder, "scrolled-" + language + ".png")))
+                    await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+            }
+            File.WriteAllText(Path.Combine(folder, "completed.txt"), "Synthetic long Dropbox review. No deletion action invoked.");
+        }
+        catch (Exception ex) { File.WriteAllText(Path.Combine(folder, "error.txt"), ex.ToString()); WriteWebLog("Residual QA failed: " + ex); }
+    }
+
+    private async Task RunConfirmProgressQaAsync()
+    {
+        if (_visualQaStarted) return;
+        _visualQaStarted = true;
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "DialogQA", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture) + "-" + Environment.ProcessId);
+        Directory.CreateDirectory(folder);
+        try
+        {
+            for (var attempt = 0; attempt < 150 && _apps.IsLoading; attempt++) await Task.Delay(100);
+            if (!_apps.HasConfirmedInventory || _apps.Apps.Count < 3) throw new InvalidOperationException("Three real inventory rows were unavailable for read-only confirmation QA.");
+            foreach (var language in new[] { "ar", "en" })
+            {
+                _main.LanguageCode = language;
+                _apps.SelectAllVisible(false);
+                foreach (var app in _apps.Apps.Take(3)) app.IsBatchSelected = true;
+                ScheduleState(); await Task.Delay(400);
+                var clicked = await Browser.CoreWebView2.ExecuteScriptAsync("(() => { const button=document.querySelector('.workspace-selection .button.primary'); if (!button) return false; button.click(); return true; })()");
+                if (clicked != "true") throw new InvalidOperationException("Confirmation launcher was unavailable.");
+                await Task.Delay(350);
+                var confirmation = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.premium-confirm h2')?.textContent,rows:document.querySelectorAll('.premium-confirm .confirmation-card').length,options:[...document.querySelectorAll('.premium-confirm .uninstall-options input[type=checkbox]')].map(input=>input.checked),protectionVisible:!!document.querySelector('.premium-confirm .protection-confirmation'),actions:document.querySelectorAll('.premium-confirm>.modal-actions button').length})");
+                File.WriteAllText(Path.Combine(folder, "confirmation-" + language + ".json"), confirmation);
+                using (var image = File.Create(Path.Combine(folder, "confirmation-" + language + ".png")))
+                    await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+                await Browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('.premium-confirm>.modal-actions .button.quiet')?.click()");
+                _apps.SelectAllVisible(false);
+                _apps.ShowSyntheticQueuePreview(true, 3);
+                ScheduleState(); await Task.Delay(450);
+                var progress = await Browser.CoreWebView2.ExecuteScriptAsync("(() => {const ring=document.querySelector('.simple-progress-card.current')?.getBoundingClientRect(),status=document.querySelector('.simple-progress-status')?.getBoundingClientRect(),button=document.querySelector('.simple-progress-footer button')?.getBoundingClientRect();return JSON.stringify({cards:document.querySelectorAll('.simple-progress-card').length,rings:document.querySelectorAll('.simple-progress-card.current').length,footerButtons:document.querySelectorAll('.simple-progress-footer button').length,allVisible:!!ring&&!!status&&!!button&&ring.top>=0&&ring.bottom<status.top&&status.bottom<button.top&&button.bottom<=innerHeight,status:document.querySelector('.simple-progress-status')?.textContent})})()");
+                File.WriteAllText(Path.Combine(folder, "progress-3-" + language + ".json"), progress);
+                using (var image = File.Create(Path.Combine(folder, "progress-3-" + language + ".png")))
+                    await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+                _apps.ShowSyntheticQueuePreview(false, 3);
+                _apps.CloseProgress(); ScheduleState(); await Task.Delay(250);
+            }
+            File.WriteAllText(Path.Combine(folder, "completed.txt"), "Read-only confirmation; synthetic command-free progress. No uninstall command launched.");
+        }
+        catch (Exception ex) { File.WriteAllText(Path.Combine(folder, "error.txt"), ex.ToString()); WriteWebLog("Dialog QA failed: " + ex); }
+    }
+
+    private async Task RunProgressQaAsync()
+    {
+        if (_visualQaStarted) return;
+        _visualQaStarted = true;
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "ProgressQA", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture) + "-" + Environment.ProcessId);
+        Directory.CreateDirectory(folder);
+        try
+        {
+            foreach (var language in new[] { "en", "ar" })
+            foreach (var count in new[] { 2, 3 })
+            {
+                _main.LanguageCode = language;
+                _apps.ShowSyntheticQueuePreview(true, count);
+                ScheduleState(); await Task.Delay(500);
+                await Capture($"progress-{count}-{language}");
+                _apps.ShowSyntheticQueuePreview(false, count);
+                ScheduleState(); await Task.Delay(500);
+                await Capture($"results-{count}-{language}");
+                _apps.CloseProgress(); ScheduleState();
+            }
+            File.WriteAllText(Path.Combine(folder, "completed.txt"), "Synthetic, command-free WebView2 captures from the published Debug executable.");
+        }
+        catch (Exception ex)
+        {
+            File.WriteAllText(Path.Combine(folder, "error.txt"), ex.ToString());
+            WriteWebLog("Progress QA failed: " + ex);
+        }
+
+        async Task Capture(string name)
+        {
+            using var stream = File.Create(Path.Combine(folder, name + ".png"));
+            await Browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+            var layout = await Browser.CoreWebView2.ExecuteScriptAsync("JSON.stringify({cards:document.querySelectorAll('.simple-progress-card').length,rings:document.querySelectorAll('.simple-progress-card.current').length,status:document.querySelector('.simple-progress-status')?.textContent,footerButtons:document.querySelectorAll('.simple-progress-footer button').length,results:document.querySelectorAll('.simple-result-row').length})");
+            File.WriteAllText(Path.Combine(folder, name + ".json"), layout);
+        }
+    }
+#endif
 
     private async Task RunAttentionQaAsync()
     {

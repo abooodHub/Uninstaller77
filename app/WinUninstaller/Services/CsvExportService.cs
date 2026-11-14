@@ -16,8 +16,9 @@ public static class CsvExportService
 
     // The caller supplies the full filtered result set, not merely the virtualized viewport.
     public static List<string> FilteredResults(IEnumerable<InstalledApp> filtered) =>
-        new[] { "Name,Publisher,Version,SizeKB,InstallDate,Source,Category" }.Concat(filtered.Select(a =>
+        filtered.Select(a =>
             string.Join(',', new[] { Cell(a.Name), Cell(a.Publisher), Cell(a.Version),
                 a.EstimatedSizeKB.ToString(CultureInfo.InvariantCulture), Cell(a.InstallDate), Cell(a.Source),
-                Cell(a.IsBuiltInWindowsApp ? "Windows Built-in" : a.IsThirdPartyWindowsApp ? "Windows Third-Party" : "Standard App") }))).ToList();
+                Cell(a.IsBuiltInWindowsApp ? "Windows Built-in" : a.IsThirdPartyWindowsApp ? "Windows Third-Party" : "Standard App") }))
+            .Prepend("Name,Publisher,Version,SizeKB,InstallDate,Source,Category").ToList();
 }

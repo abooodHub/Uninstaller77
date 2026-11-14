@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## Release 1 (1.0.3 preview) — 2026-11-14
 
+- Unify the dark theme across Setup, the Windows host and the React interface. Keep Arabic and English layouts in the application.
+- Add a bounded Install Monitor with installation reports, cancellation, JSON export and verified evidence for leftover review.
+- Add startup management, a program-file picker, Windows application filters and browser extension management links.
+- Preserve stop-after-current behavior and separate restoration failures from backup receipt cleanup.
+- Local build, rendering and policy checks passed. Full VMware acceptance is pending.
+
+### Earlier changes included in this build
+
+- Unify single-application and multi-application removal behind the same confirmation options, replace the dashboard-style running queue with a centered animated application experience, and retain verified results plus explicit leftover review.
+- Forward Explorer shortcut uninstall requests to the already-running desktop process through a bounded current-user pipe, bringing the existing window forward instead of opening a second application window.
+- Add reduced-motion-aware transitions, circular current-application progress, bilingual four-stage status guidance, and accurate deleted/retained leftover totals to the uninstall workspace.
 - Split focus management, application/browser icons, and virtual-list rendering out of the 1,300-line React entry point without changing bundle size or host behavior.
 - Add a typed 52-operation host allowlist and a cross-language audit that rejects drift between the C# WebView protocol, TypeScript contract, and static UI calls.
 - Add a pinned weekly/PR CodeQL workflow for C# and TypeScript plus dependency-review rejection for new High/Critical vulnerable dependencies.

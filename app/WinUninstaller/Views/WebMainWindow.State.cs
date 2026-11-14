@@ -22,9 +22,16 @@ public partial class WebMainWindow
         settingsOpen = _main.IsSettingsOpen,
         page = CurrentWebPage,
         activeSidebarItem = _workspacePage ?? _main.ActiveSidebarItem,
-        controlPage = new
+        installationPage = CurrentWebPage == "install-monitor" ? InstallationPageDto() : null,
+        startupPage = new
         {
-            historyCount = _history.TotalCount, historyIncludesTests = _history.ShowTestRecords
+            loading = _startupLoading,
+            scanned = _startupInventory is not null,
+            failed = _startupFailed,
+            failedSources = _startupInventory?.FailedSources ?? 0,
+            snapshotId = _startupInventory?.SnapshotId,
+            batchResult = CurrentWebPage == "startup" ? _startupBatchResult : null,
+            items = CurrentWebPage == "startup" ? _startupInventory?.Items ?? [] : [],
         },
         extensionsPage = new
         {
@@ -124,7 +131,7 @@ public partial class WebMainWindow
                 bytes = _apps.UnregisteredPlan?.Bytes, count = _apps.UnregisteredPlan?.Files.Count,
                 files = _apps.UnregisteredPlan?.Files.Select(file => new { path = file.RelativePath, bytes = file.Bytes }).Take(200).ToArray()
             },
-            quiet = _apps.IsQuietMode, scanResiduals = _apps.AutoScanResiduals,
+            quiet = _apps.IsQuietMode, scanResiduals = _apps.AutoScanResiduals, deepResiduals = _apps.DeepResidualScan,
             operation = new
             {
                 open = _apps.IsProgressOpen, isBatch = _apps.IsBatchQueue,
@@ -138,7 +145,7 @@ public partial class WebMainWindow
                 title = _apps.ProgressTitle, status = _apps.ProgressStatus, stage = _apps.CurrentStage,
                 app = _apps.ProgressApp is null ? null : AppDto(_apps.ProgressApp),
                 total = _apps.BatchTotal, processed = _apps.BatchCompleted, percent = _apps.BatchProgressPercent,
-                successful = _apps.BatchSuccessful, failed = _apps.BatchFailed, skipped = _apps.BatchSkipped,
+                successful = _apps.BatchSuccessful, partial = _apps.BatchPartial, failed = _apps.BatchFailed, skipped = _apps.BatchSkipped,
                 elapsed = _apps.ElapsedTime, state = _apps.BatchState.ToString(), stateLabel = _apps.BatchStateLabel,
                 operationState = _apps.OperationState.ToString(), stopRequested = _apps.StopBatchAfterCurrent,
                 needsReview = _apps.NeedsQueueReview, canCancelCurrent = _apps.CanCancelCurrent,
@@ -162,7 +169,7 @@ public partial class WebMainWindow
                 queueItems = _apps.QueueItems.Select(item => new { item.OperationId, app = AppDto(item.App),
                     state = item.State.ToString(), item.StartedAt, item.FinishedAt, item.Message, item.ExitCode, item.FailureCode }).ToArray(),
                 logs = _apps.ProgressLogs.ToArray(), results = _apps.BatchResults.Select(r => new
-                { app = AppDto(r.App), state = r.State.ToString(), message = r.Message, label = r.StateLabel }).ToArray()
+                { app = AppDto(r.App), state = r.State.ToString(), message = r.Message, label = r.StateLabel, r.ExitCode, r.FailureCode }).ToArray()
             },
             residual = new
             {
@@ -170,16 +177,36 @@ public partial class WebMainWindow
                 reviewId = _apps.ResidualReviewId, selectionVersion = _apps.ResidualSelectionVersion,
                 stage = _apps.ResidualScanStage,
                 scannedLocations = _apps.ResidualScannedLocations, size = _apps.TotalResidualSizeDisplay,
+                deletedCount = _apps.LastResidualDeletedCount, keptCount = _apps.LastResidualKeptCount,
+                deletedBytes = _apps.LastResidualDeletedBytes,
+                deletedRegistryCount = _apps.LastResidualDeletedRegistryCount,
+                deletedFileBytes = _apps.LastResidualDeletedFileBytes,
+                deletionAttempted = _apps.ResidualDeletionAttempted,
+                deleteProcessed = _apps.ResidualDeleteProcessedCount, deleteTotal = _apps.ResidualDeleteTotalCount,
+                deleteCurrentApp = _apps.ResidualDeleteCurrentApp,
+                deleteCurrentPath = _apps.ResidualDeleteCurrentPath, deleteStopRequested = _apps.ResidualDeleteStopRequested,
+                skippedCount = _apps.LastResidualSkippedCount, failedCount = _apps.LastResidualFailedCount,
+                eligibleBytes = _apps.ResidualItems.Where(item => item.CanClean).Sum(item => item.SizeBytes),
                 foundSelectable = _apps.ResidualReviewGroups.Any(group => group.Items.Any(item => item.CanClean)),
-                groups = _apps.ResidualReviewGroups.Where(group => _apps.IsResidualOpen && group.Items.Count > 0).Select(group => new
+                canReview = !_apps.IsResidualOpen && !_apps.IsBatchRunning && _apps.ResidualReviewGroups.Count > 0,
+                groups = _apps.ResidualReviewGroups.Where(group => _apps.IsResidualOpen).Select(group => new
                 {
                     app = AppDto(group.App), group.Offset, count = group.Items.Count,
-                    status = group.Scan.Message(_apps.LanguageCode)
+                    sizeBytes = group.Items.Sum(item => item.SizeBytes),
+                    status = group.Scan.Message(_apps.LanguageCode), reason = group.Scan.Error,
+                    coverageIssues = group.Scan.UnavailableScopes ?? [], deep = group.Scan.Deep,
+                    locations = group.Scan.ScannedLocations
                 }).ToArray(),
                 summary = _apps.ResidualReviewGroups.Select(group => new
                 {
                     id = group.App.Id, name = group.App.Name,
+                    cleanedCount = _apps.ResidualDeletedByApp.GetValueOrDefault(group.App.Id),
+                    remainingCount = group.Items.Count,
+                    reviewOnlyCount = group.Items.Count(item => !item.CanClean),
                     status = group.Scan.Message(_apps.LanguageCode),
+                    reason = group.Scan.Error,
+                    coverageIssues = group.Scan.UnavailableScopes ?? [], deep = group.Scan.Deep,
+                    locations = group.Scan.ScannedLocations,
                     folder = group.Scan.InstallFolder == ResidualInstallFolderState.NotChecked ? null
                         : UiStrings.Get(_apps.LanguageCode, "residualFolder" + group.Scan.InstallFolder),
                     location = group.App.InstallLocation,
@@ -187,7 +214,8 @@ public partial class WebMainWindow
                 }).ToArray(),
                 items = _apps.ResidualItems.Select((item, index) => new
                 {
-                    index, title = item.Title, path = item.Path, size = item.SizeDisplay,
+                    index, title = item.Title, path = item.Path, kind = item.Type.ToString(), size = item.SizeDisplay,
+                    sizeBytes = item.SizeBytes, reason = item.Reason,
                     canClean = item.CanClean, selected = item.IsSelected
                 }).ToArray()
             }
@@ -217,7 +245,7 @@ public partial class WebMainWindow
         id = app.Id, name = app.Name, publisher = app.Publisher, version = app.Version,
         size = app.SizeDisplay, sizeKb = app.EstimatedSizeKB, installDate = app.DisplayInstallDate,
         architecture = app.Architecture, installerType = app.TypeDisplay, source = app.Source,
-        icon = ToDataUri(app.IconImage), selected = app.IsBatchSelected,
+        icon = ToDataUri(app.IconImage), selected = app.IsBatchSelected && app.CanUninstall, canUninstall = app.CanUninstall,
         installLocation = app.InstallLocation, registryKey = app.RegistryKeyPath,
         uninstallCommand = app.SafeUninstallCommand, quietUninstallCommand = app.SafeQuietUninstallCommand,
         isBuiltIn = app.IsBuiltInWindowsApp, isThirdParty = app.IsThirdPartyWindowsApp,
@@ -232,7 +260,8 @@ public partial class WebMainWindow
         status = item.StatusText, residualStatus = item.Protection is null ? item.Record.ResidualStatus : item.ResidualStatus, exitCode = item.Record.ObservedExitCode,
         residualPermanent = item.Record.ResidualStatus.StartsWith("ResidualPermanent:", StringComparison.Ordinal) ? item.ResidualStatus : null,
         icon = ToDataUri(item.Icon), notes = includeNotes ? item.Notes : null, test = item.IsLegacyTestRecord,
-        cleanedItemsCount = item.Record.CleanedItemsCount, cleanedSizeBytes = item.Record.CleanedSizeBytes
+        cleanedItemsCount = item.Record.CleanedItemsCount, cleanedSizeBytes = item.Record.CleanedSizeBytes,
+        canRescan = ResidualHistoryIdentity.TryRestore(item.Record, out _)
     };
 
     private string? ToDataUri(ImageSource? source)

@@ -83,6 +83,8 @@ public partial class TestRunnerService
             var expected = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
             if (command.FileName != expected || command.UseShellExecute || command.StandardOutputEncoding?.WebName != "utf-8" ||
                 !command.Arguments.Contains("-ErrorAction Stop", StringComparison.Ordinal)) throw new Exception("AppX query does not use a pinned UTF-8 read-only command.");
+            if (!command.Arguments.Contains("PackageFamilyName, NonRemovable |", StringComparison.Ordinal) ||
+                command.Arguments.Contains("$_.NonRemovable", StringComparison.Ordinal)) throw new Exception("AppX query hides the protection state instead of returning it.");
             if (WebUiProtocol.IsTrustedSource("https://spoof@appassets.winuninstaller/index.html")) throw new Exception("A credential-bearing app URI was trusted.");
             return "System PowerShell pinned, UTF-8 decoding explicit, errors stop the query, and credential-bearing bridge origins rejected.";
         });

@@ -251,6 +251,7 @@
                 </Grid.ColumnDefinitions>
 
                 <CheckBox Grid.Column="0" IsChecked="{Binding IsBatchSelected, UpdateSourceTrigger=PropertyChanged}"
+                          IsEnabled="{Binding CanUninstall}"
                           HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Select for batch removal"/>
 
                 <!-- Icon (32x32) -->
@@ -318,6 +319,7 @@
 
                     <Button Content="{Binding DataContext.UninstallActionLabel, RelativeSource={RelativeSource AncestorType=ListBox}}"
                             Style="{StaticResource DangerButton}"
+                            IsEnabled="{Binding CanUninstall}"
                             FontSize="11" MinWidth="78" Height="30" Padding="10,4"
                             Command="{Binding DataContext.PromptUninstallCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                             CommandParameter="{Binding}"/>

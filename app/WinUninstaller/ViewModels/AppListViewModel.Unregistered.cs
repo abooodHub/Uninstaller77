@@ -19,7 +19,7 @@ public partial class AppListViewModel
 
     private void RequireUnregisteredIdle()
     {
-        if (IsUnregisteredBusy || IsBatchRunning || IsCleaningResiduals || NeedsQueueReview || HasPendingQueueReview || UninstallService.HasPendingOperation)
+        if (IsInstallationRecording || IsUnregisteredBusy || IsBatchRunning || IsCleaningResiduals || NeedsQueueReview || HasPendingQueueReview || UninstallService.HasPendingOperation)
             throw new InvalidOperationException("UnregisteredApp:OperationBusy");
     }
 
@@ -172,7 +172,8 @@ public partial class AppListViewModel
         {
             _db.AddRecord(new UninstallRecord { AppId = id, AppName = name, InstallerType = "Unregistered files",
                 CachedIconPath = UnregisteredIdentity?.Id == id ? UnregisteredIdentity.CachedIconPath : "",
-                Success = false, Outcome = outcome, ExitCode = 0, ExitObserved = false, UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Success = false, Outcome = outcome, ExitCode = 0, ExitObserved = false,
+                UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
                 ResidualStatus = "ResidualScan:NotScanned", Notes = notes });
             OnPropertyChanged(nameof(HistoryCount));
         }

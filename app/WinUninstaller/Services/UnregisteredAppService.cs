@@ -29,6 +29,7 @@ public sealed class UnregisteredAppService
     private readonly string _application;
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     private static readonly string[] DataNames = ["data", "user data", "userdata", "profiles", "profile", "logs", ".git", ".ssh", ".env", "node_modules"];
+    private static readonly string[] ElectronBundleFiles = ["resources\\app.asar", "icudtl.dat", "chrome_100_percent.pak"];
 
     public UnregisteredAppService() : this(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "Quarantine"), AppContext.BaseDirectory) { }
@@ -358,7 +359,7 @@ public sealed class UnregisteredAppService
         if (mustExist && !Directory.Exists(root)) Fail("ChangedScope");
     }
 
-    private static bool IsElectronBundle(string root) => new[] { "resources\\app.asar", "icudtl.dat", "chrome_100_percent.pak" }.All(path => File.Exists(Path.Combine(root, path)));
+    private static bool IsElectronBundle(string root) => ElectronBundleFiles.All(path => File.Exists(Path.Combine(root, path)));
     private static bool IsDataName(string name) => DataNames.Contains(name, StringComparer.OrdinalIgnoreCase) || name.StartsWith(".env", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase);
     private static void CheckExecutable(string target)
     {

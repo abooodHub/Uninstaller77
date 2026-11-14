@@ -94,11 +94,32 @@ Check("Support report is a bounded metadata schema with UTC time", () =>
         Require(!json.Contains('"' + forbidden + '"', StringComparison.Ordinal), "Private report field: " + forbidden);
     Require(DateTimeOffset.Parse(doc.RootElement.GetProperty("createdUtc").GetString()!).Offset == TimeSpan.Zero, "Report time was not UTC.");
 });
-foreach (var operation in new[] { "refreshControlCenter", "openControlFolder", "openWindowsAppsSettings", "exportSupportReport" })
+foreach (var operation in new[] { "refreshControlCenter", "openControlFolder", "openWindowsAppsSettings", "exportSupportReport", "reviewProgramFile" })
     Check("Authorized bridge operation " + operation, () => Require(WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "test", op = operation, payload = new { } }), out _, out _), "New operation was rejected."));
 foreach (var operation in new[] { "shredPath", "createRestorePoint", "forceUninstall", "runShell", "cleanHealthCategory", "scanHealth" })
     Check("Unavailable bridge operation remains denied " + operation, () => Require(!WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "test", op = operation, payload = new { } }), out _, out _), "A removed or dangerous action became available."));
 Check("Windows Settings target is fixed", () => Require(ControlCenterService.WindowsAppsSettingsUri == "ms-settings:appsfeatures", "A dynamic URI was introduced."));
+Check("Program file review requires the native picker", () =>
+{
+    foreach (var payload in new object[] { new { path = @"C:\Owned\App.exe" }, new { arguments = "/quiet" } })
+        Require(!WebUiProtocol.TryParse(JsonSerializer.Serialize(new { id = "test", op = "reviewProgramFile", payload }), out _, out _),
+            "The browser supplied a file or command-line arguments.");
+});
+
+Check("An active residual cleanup can receive its stop request", () => Require(
+    WebUiProtocol.CanDispatch("stopResidualCleanup", unregisteredBusy: false, residualBusy: true, dialogPending: false),
+    "The stop request was blocked before review identity validation."));
+Check("Cleanup still blocks selection, deletion and restore requests", () =>
+{
+    foreach (var operation in new[] { "selectResidual", "deleteReviewedResiduals", "restoreQuarantine", "reviewProgramFile" })
+        Require(!WebUiProtocol.CanDispatch(operation, unregisteredBusy: false, residualBusy: true, dialogPending: false),
+            "Cleanup admitted a concurrent action: " + operation);
+});
+Check("Stopping residual cleanup does not bypass other busy states", () => Require(
+    !WebUiProtocol.CanDispatch("stopResidualCleanup", unregisteredBusy: true, residualBusy: true, dialogPending: false) &&
+    !WebUiProtocol.CanDispatch("stopResidualCleanup", unregisteredBusy: false, residualBusy: true, dialogPending: true) &&
+    WebUiProtocol.CanDispatch("getState", unregisteredBusy: true, residualBusy: true, dialogPending: true),
+    "Another busy operation was bypassed or the UI could no longer read state."));
 
 Console.WriteLine($"RESULT {passed} passed / {failed} failed; no user files, browser profiles, registry settings or uninstallers were changed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;

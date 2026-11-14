@@ -1,4 +1,6 @@
 
+import type { AppItem, HistoryItem, State } from './host-contract'
+
 const unregisteredErrors: Record<string, [string, string]> = {
     AmbiguousBackup: ['More than one stored copy matches this target. Review the backups manually.', 'تطابق المسار أكثر من نسخة محفوظة. راجع النسخ يدويًا.'],
     PermanentDeletionStarted: ['Permanent deletion has started; this is not a complete restorable backup.', 'بدأ الحذف النهائي؛ هذه ليست نسخة كاملة قابلة للاستعادة.'],
@@ -46,7 +48,7 @@ export function historyOutcome(item: { success: boolean; outcome?: string; test?
   let state = item.outcome || (item.success ? 'Succeeded' : 'LegacyUnverified')
   if (state === 'Succeeded' && !item.success || item.success && state !== 'Succeeded') state = 'NeedsAttention'
   const labels: Record<string, [string, string]> = {
-    Succeeded: ['Success', 'نجاح'], Failed: ['Failed', 'فشل'], Cancelled: ['Cancelled', 'أُلغيت'],
+    Succeeded: ['Success', 'نجاح'], Partial: ['Partial removal', 'إزالة جزئية'], Failed: ['Failed', 'فشل'], Cancelled: ['Cancelled', 'أُلغيت'],
     NeedsAttention: ['Unresolved', 'غير محسوم'], NotStarted: ['Not started', 'لم تبدأ'], NotInstalled: ['Already absent — skipped', 'غير مثبت حاليًا — تم التخطي'],
     FilesQuarantined: ['Files quarantined', 'عُزلت ملفات التطبيق'], FilesRestored: ['Files restored', 'استُعيدت ملفات التطبيق'],
     FilesDeleted: ['Application files deleted', 'حُذفت ملفات التطبيق'], FileDeletionIncomplete: ['File deletion incomplete', 'لم يكتمل حذف الملفات'],
@@ -139,6 +141,23 @@ const arabic: Record<string, string> = {
   'Windows Installer does not recognize the registered product.': 'لا يتعرف Windows Installer على المنتج المسجّل للإزالة.',
   'The registered MSI product code was not found in this installation context. The entry may be stale or refer to another product or user context. No successful removal was verified.': 'لم يُعثر على رمز منتج MSI المسجّل ضمن سياق التثبيت الحالي. قد يكون التسجيل قديمًا أو يشير إلى منتج أو حساب مستخدم آخر. لم يتم تأكيد إزالة ناجحة.',
   'Uninstaller returned a failure exit code.': 'أعادت أداة الإزالة رمز فشل.',
+  'Windows or the publisher has disabled removal for this installation.': 'عطّل Windows أو الناشر إزالة هذا التثبيت.',
+  'The current uninstall registration has NoRemove set.': 'تسجيل الإزالة الحالي يحمل علامة NoRemove.',
+  'Removal was cancelled in Windows Installer.': 'أُلغيت الإزالة في Windows Installer.',
+  'Windows Installer failed to remove this program.': 'تعذّر على Windows Installer إزالة هذا البرنامج.',
+  "Check the Windows Installer details or the publisher's repair instructions before retrying.": 'راجع أحداث Windows Installer أو تعليمات الإصلاح من الناشر قبل إعادة المحاولة.',
+  'Windows Installer could not open the installation source.': 'تعذّر على Windows Installer فتح مصدر التثبيت.',
+  "Use the original installer or the publisher's repair instructions to restore the installation source, then retry.": 'استخدم المثبّت الأصلي أو تعليمات الإصلاح من الناشر لاستعادة مصدر التثبيت، ثم أعد المحاولة.',
+  'Windows Installer is busy.': 'Windows Installer مشغول.',
+  'Retry after the other installation completes.': 'أعد المحاولة بعد انتهاء التثبيت الآخر.',
+  'A system policy blocked Windows Installer.': 'منعت سياسة النظام عملية Windows Installer.',
+  'Contact the system administrator to review the policy for this package.': 'تواصل مع مسؤول النظام لمراجعة السياسة الخاصة بهذه الحزمة.',
+  'A required step in the Windows Installer package failed.': 'فشلت خطوة مطلوبة داخل حزمة Windows Installer.',
+  "Check the publisher's instructions for this package before retrying.": 'راجع تعليمات ناشر هذه الحزمة قبل إعادة المحاولة.',
+  'Windows Installer returned a failure exit code.': 'أعاد Windows Installer رمز فشل.',
+  'Windows Installer is busy. Waiting briefly before one retry.': 'Windows Installer مشغول. جارٍ الانتظار قليلًا قبل إعادة المحاولة مرة واحدة.',
+  'The installation identity changed before the Windows Installer retry.': 'تغيّرت هوية التثبيت قبل إعادة محاولة Windows Installer.',
+  'Refresh the application list and review the current installation.': 'حدّث قائمة البرامج وراجع التثبيت الحالي.',
   'The uninstaller reported access denied and ran without administrator rights.': 'أبلغت أداة الإزالة عن رفض الوصول وقد عملت دون صلاحيات المسؤول.',
   'The uninstaller reported access denied although it ran elevated.': 'أبلغت أداة الإزالة عن رفض الوصول رغم أنها عملت بصلاحيات مرتفعة.',
   'Administrative privileges were denied at the UAC prompt. No uninstaller was started.': 'رُفضت صلاحيات المسؤول في مطالبة UAC. لم تبدأ أداة الإزالة.',
@@ -224,6 +243,17 @@ const arabic: Record<string, string> = {
   'Restore parent is unavailable or is a reparse point.': 'مجلد الاستعادة غير متاح أو يشير إلى مسار آخر.',
   'Former install location; review contents and shared use before moving to quarantine.': 'مجلد التثبيت السابق؛ راجع محتوياته واستخدامه المشترك قبل نقله إلى الحجر.',
   'The former install directory could not be verified for quarantine.': 'تعذّر التحقق من مجلد التثبيت السابق لنقله إلى الحجر.',
+  'Package identity was not recorded.': 'لم تُسجّل هوية الحزمة.',
+  'No recorded installation identity.': 'لا توجد هوية تثبيت مسجّلة.',
+  'No supported locations were checked.': 'لم يُفحص أي موقع مدعوم.',
+  'Checking former install directory': 'مجلد التثبيت السابق',
+  'Checking recorded installation changes': 'سجل تغييرات التثبيت',
+  'Checking accessible user profiles': 'ملفات تعريف المستخدمين المتاحة',
+  'Checking 32-bit and 64-bit Registry views': 'نطاقا سجل Windows ‏32 و64 بت',
+  'Checking service registrations': 'تسجيلات الخدمات',
+  'Checking named scheduled tasks': 'المهام المجدولة المطابقة بالاسم',
+  'Checking desktop and Start menu shortcuts': 'اختصارات سطح المكتب وقائمة ابدأ',
+  'Path, registration, sharing, or access could not be verified.': 'تعذّر التحقق من المسار أو التسجيل أو الاستخدام المشترك أو إمكانية الوصول.',
   'The quarantine folder is redirected.': 'مجلد الحجر يشير إلى مسار آخر.',
   'The reviewed directory changed. Scan again before moving it to quarantine.': 'تغيّر المجلد بعد المراجعة. أعد الفحص قبل نقله إلى الحجر.',
   'Name match only; ownership unverified. Informational, not eligible for cleanup.': 'تطابق في الاسم فقط؛ لم يتم التحقق من الملكية. للمراجعة ولا يمكن تنظيفه.',
@@ -250,8 +280,9 @@ export function verifiedQueuePercent(op: { total?: number; successful?: number }
 }
 
 /** The reason belongs to its own attempt, even after another application finishes. */
-export function queueFailureReason(item: { state: string; message?: string }, language: string): string {
-  if (!['Failed', 'NeedsUserAttention', 'NeedsAttention'].includes(item.state)) return ''
+export function queueFailureReason(item: { state: string; message?: string; exitCode?: number | null }, language: string): string {
+  const observedCancellation = item.state === 'Cancelled' && item.exitCode === 1602
+  if (!observedCancellation && !['Failed', 'Partial', 'NeedsUserAttention', 'NeedsAttention'].includes(item.state)) return ''
   const summary = (item.message || '').split(/\r?\n/, 1)[0].split(' — ', 1)[0].trim()
   return localizeText(summary, language).slice(0, 600)
 }
@@ -265,8 +296,11 @@ const failureCategories: Record<string, [string, string]> = {
   LaunchAccessDenied: ['Launch access denied', 'رُفض الوصول عند التشغيل'],
   AccessDenied: ['Access denied while elevated', 'رُفض الوصول رغم الصلاحيات المرتفعة'],
   UninstallerExitError: ['Uninstaller refused or failed', 'رفض المزيل أو فشله'],
-  MsiInstallFailure: ['Uninstaller refused or failed', 'رفض المزيل أو فشله'],
+  MsiInstallFailure: ['Windows Installer failed', 'فشل Windows Installer'],
   MsiBusy: ['Windows Installer busy', 'Windows Installer مشغول'],
+  MsiSourceUnavailable: ['Installation source unavailable', 'مصدر التثبيت غير متاح'],
+  MsiPolicyBlocked: ['Blocked by system policy', 'منعت سياسة النظام العملية'],
+  RemovalBlocked: ['Removal unavailable', 'الإزالة غير متاحة'],
   RegistrationAbsent: ['Already absent', 'غير مثبت حاليًا'],
   MissingExecutable: ['Uninstaller missing', 'ملف أداة الإزالة مفقود'],
   MsiUnknownProduct: ['MSI product not found in this context', 'منتج MSI غير موجود ضمن السياق الحالي'],
@@ -278,15 +312,15 @@ const failureCategories: Record<string, [string, string]> = {
 }
 
 /** Per-attempt diagnosis: category, failure code and exit code stay on their own row. */
-export function queueFailureInfo(item: { state: string; message?: string; failureCode?: string; exitCode?: number | null }, language: string) {
+export function queueFailureInfo(item: { state: string; message?: string; failureCode?: string | null; exitCode?: number | null }, language: string) {
   const reason = queueFailureReason(item, language)
   const lines = (item.message || '').split(/\r?\n/).map(line => line.trim())
   const fromMessage = /^[A-Za-z]{4,}$/.test(lines[1] || '') ? lines[1] : ''
   const code = item.failureCode && item.failureCode !== 'None' ? item.failureCode : fromMessage
-  const parsedExit = lines.map(line => /^Exit code:\s*(-?\d+)$/.exec(line)?.[1]).find(value => value !== undefined)
+  const parsedExit = lines.map(line => /^(?:Exit code|رمز الخروج):\s*(-?\d+)$/.exec(line)?.[1]).find(value => value !== undefined)
   const exitCode = item.exitCode ?? (parsedExit === undefined ? null : Number(parsedExit))
   const category = code ? failureCategories[code]?.[language === 'ar' ? 1 : 0] || '' : ''
-  const failed = ['Failed', 'NeedsUserAttention', 'NeedsAttention', 'Cancelled', 'NotInstalled'].includes(item.state)
+  const failed = ['Failed', 'Partial', 'NeedsUserAttention', 'NeedsAttention', 'Cancelled', 'NotInstalled'].includes(item.state)
   return { reason, code: failed ? code : '', category: failed ? category : '', exitCode: failed ? exitCode : null }
 }
 
@@ -330,10 +364,20 @@ export function localizeText(value: unknown, language: string): string {
     .replace(/The system cannot find the (?:file|path) specified\.?/gi, 'يتعذر العثور على الملف أو المسار المحدد.')
 }
 
-export function localizeState<T extends { language: string; appsPage: any; historyPage: any }>(state: T): T {
+export function localizeState(state: State): State {
   const t = (value: unknown) => localizeText(value, state.language)
-  const app = (item: any) => item ? { ...item, size: t(item.size), installDate: t(item.installDate), architecture: t(item.architecture), installerType: t(item.installerType), source: t(item.source), uninstallCommand: t(item.uninstallCommand), quietUninstallCommand: t(item.quietUninstallCommand) } : item
-  const history = (item: any) => {
+  const scanIssue = (issue: string) => {
+    const separator = issue.indexOf(': ')
+    if (separator < 0) return issue
+    const scope = issue.slice(0, separator)
+    const detail = issue.slice(separator + 2)
+    // Scope labels and known diagnostics are translated. Paths and unknown errors stay verbatim.
+    return state.language === 'ar' && arabic[scope]
+      ? `${arabic[scope]}: ${arabic[detail] || detail}`
+      : issue
+  }
+  const app = <T extends AppItem | null | undefined>(item: T): T => item ? { ...item, size: t(item.size), installDate: t(item.installDate), architecture: t(item.architecture), installerType: t(item.installerType), source: t(item.source), uninstallCommand: t(item.uninstallCommand), quietUninstallCommand: t(item.quietUninstallCommand) } as T : item
+  const history = <T extends HistoryItem | null | undefined>(item: T): T => {
     if (!item) return item
     const count = Number(item.cleanedItemsCount || 0)
     const size = (Number(item.cleanedSizeBytes || 0) / 1024 / 1024).toFixed(1)
@@ -342,10 +386,16 @@ export function localizeState<T extends { language: string; appsPage: any; histo
         ? `نُقل ${count === 1 ? 'عنصر واحد' : `${count} عناصر`} إلى الحجر (${size} م.ب)`
         : `${count} item${count === 1 ? '' : 's'} moved to quarantine (${size} MB)`
       : residualScanStatusText(!item.success && item.residualStatus === 'Scanning...' ? 'Not scanned' : item.residualStatus || '', state.language, item.installerType))
-    return { ...item, installerType: t(item.installerType), residualStatus, notes: t(item.notes) }
+    return { ...item, installerType: t(item.installerType), residualStatus, notes: t(item.notes) } as T
   }
   const p = state.appsPage, op = p.operation || {}, residual = p.residual || {}, hp = state.historyPage
-  return { ...state, appsPage: { ...p, status: t(p.status), items: (p.items || []).map(app), details: app(p.details), confirm: app(p.confirm), operation: { ...op, review: op.review ? { ...op.review, observation: t(op.review.observation), items: (op.review.items || []).map((r: any) => ({ ...r, evidence: t(r.evidence), registeredCommand: t(r.registeredCommand) })) } : undefined, app: app(op.app), status: t(op.status), stage: t(op.stage), errorDetails: t(op.errorDetails), logs: (op.logs || []).map(t), results: (op.results || []).map((r: any) => ({ ...r, app: app(r.app), message: t(r.message) })) }, residual: { ...residual, message: t(residual.message), stage: t(residual.stage), items: (residual.items || []).map((r: any) => ({ ...r, type: t(r.type), size: t(r.size), confidence: t(r.confidence), reason: t(r.reason) })) } }, historyPage: { ...hp, records: (hp.records || []).map(history), details: history(hp.details) } }
+  const localizedResidual = {
+    ...residual, message: t(residual.message), stage: t(residual.stage),
+    groups: residual.groups?.map(group => ({ ...group, reason: t(group.reason), coverageIssues: group.coverageIssues?.map(scanIssue) })),
+    summary: residual.summary?.map(group => ({ ...group, reason: t(group.reason), coverageIssues: group.coverageIssues?.map(scanIssue) })),
+    items: (residual.items || []).map(r => ({ ...r, size: t(r.size) })),
+  }
+  return { ...state, appsPage: { ...p, status: t(p.status), items: (p.items || []).map(app), details: app(p.details), confirm: app(p.confirm), operation: { ...op, review: op.review ? { ...op.review, observation: t(op.review.observation), items: (op.review.items || []).map(r => ({ ...r, evidence: t(r.evidence), registeredCommand: t(r.registeredCommand) })) } : undefined, app: app(op.app), status: t(op.status), stage: t(op.stage), errorDetails: t(op.errorDetails), logs: (op.logs || []).map(t), results: (op.results || []).map(r => ({ ...r, app: app(r.app), message: t(r.message) })) }, residual: localizedResidual }, historyPage: { ...hp, records: (hp.records || []).map(history), details: history(hp.details) } }
 }
 
 // Counts are meaningful only after a completed inventory, including a genuine empty result.

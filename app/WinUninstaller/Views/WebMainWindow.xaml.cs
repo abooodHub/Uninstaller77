@@ -37,12 +37,16 @@ public partial class WebMainWindow : Window
     private bool _uiReady;
     private int _recoveryAttempts;
     private string? _workspacePage;
-    private IReadOnlyList<BrowserExtensionInventoryService.Extension> _extensions = Array.Empty<BrowserExtensionInventoryService.Extension>();
+    private BrowserExtensionInventoryService.Extension[] _extensions = [];
     private IReadOnlyList<string> _detectedBrowsers = Array.Empty<string>();
     private bool _extensionLoading;
     private string? _extensionScanError;
     private bool _extensionsScanned;
     private int _extensionDiagnosticCount;
+    private StartupInventoryService.Inventory? _startupInventory;
+    private StartupInventoryService.BatchResult? _startupBatchResult;
+    private bool _startupLoading;
+    private bool _startupFailed;
     private long _stateRevision;
 
     [DllImport("dwmapi.dll")]
@@ -51,9 +55,10 @@ public partial class WebMainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        if (SystemParameters.HighContrast) return;
         // Opt the WPF host into DWM dark mode.
         var handle = new WindowInteropHelper(this).Handle;
-        int dark = 1, caption = 0x00121316, text = 0x00EEEEEE;
+        int dark = 1, caption = ProductTheme.CaptionColor, text = ProductTheme.CaptionTextColor;
         _ = DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
         _ = DwmSetWindowAttribute(handle, 35, ref caption, sizeof(int));
         _ = DwmSetWindowAttribute(handle, 36, ref text, sizeof(int));
@@ -62,6 +67,7 @@ public partial class WebMainWindow : Window
     public WebMainWindow(MainViewModel main, string? webViewDataFolder = null)
     {
         InitializeComponent();
+        Browser.DefaultBackgroundColor = ProductTheme.WebBackground;
         _main = main;
         _apps = main.AppList;
         _history = main.History;
@@ -118,10 +124,10 @@ public partial class WebMainWindow : Window
         {
             var userData = _webViewDataFolder ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinUninstaller", "WebView2");
             if (_measurePerformance)
-                userData = Path.Combine(Path.GetTempPath(), "Uninstaller77-VisualQA", Environment.ProcessId.ToString());
+                userData = Path.Combine(Path.GetTempPath(), "Uninstaller77-VisualQA", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 #if DEBUG
             if (Environment.GetCommandLineArgs().Contains("--ui-phase13-test"))
-                userData = Path.Combine(Path.GetTempPath(), "Uninstaller77-Phase13-VisualQA", Environment.ProcessId.ToString());
+                userData = Path.Combine(Path.GetTempPath(), "Uninstaller77-Phase13-VisualQA", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 #endif
             Directory.CreateDirectory(userData);
             var environment = await CoreWebView2Environment.CreateAsync(null, userData);
@@ -259,7 +265,7 @@ public partial class WebMainWindow : Window
             BrowserContainer.Children.Clear();
             Browser = new Microsoft.Web.WebView2.Wpf.WebView2
             {
-                DefaultBackgroundColor = System.Drawing.ColorTranslator.FromHtml("#121316")
+                DefaultBackgroundColor = ProductTheme.WebBackground
             };
             BrowserContainer.Children.Add(Browser);
             BrowserContainer.Visibility = Visibility.Visible;
@@ -281,7 +287,8 @@ public partial class WebMainWindow : Window
     private string CurrentWebPage => _workspacePage switch
     {
         "BrowserExtensions" => "extensions",
-        "ControlCenter" => "control",
+        "StartupApps" => "startup",
+        "InstallMonitor" => "install-monitor",
         _ => _main.CurrentViewModel == _history ? "history" : "apps"
     };
 
@@ -308,6 +315,16 @@ public partial class WebMainWindow : Window
         foreach (var collection in _attachedCollections) collection.CollectionChanged -= OnCollectionChanged;
         foreach (var item in _attachedItems) item.PropertyChanged -= OnItemPropertyChanged;
         _attachedCollections.Clear(); _attachedItems.Clear();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (_installationFinish is not null)
+        {
+            e.Cancel = true;
+            _apps.SetWebNotice(UiStrings.Get(_main.LanguageCode, "monitorFinishBeforeClosing"), true);
+        }
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)

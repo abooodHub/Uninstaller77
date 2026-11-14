@@ -7,6 +7,8 @@ namespace WinUninstaller.Services;
 /// <summary>Prepares and validates registered commands without launching a process.</summary>
 internal static class RegisteredUninstallCommand
 {
+    internal const string RemovalBlockedMessage = "Windows or the publisher has disabled removal for this installation.";
+    internal const string RemovalBlockedDetail = "The current uninstall registration has NoRemove set.";
     internal sealed record LaunchCommand(string Executable, string Arguments, bool IsMsi);
     internal sealed class LaunchValidationException(string message, string detail, string failureCode = "None")
         : InvalidOperationException(message)
@@ -19,6 +21,9 @@ internal static class RegisteredUninstallCommand
     // validate a current registration; the worker never trusts a UI-supplied path.
     internal static LaunchCommand PrepareLaunch(InstalledApp app, bool preferQuiet)
     {
+        if (app.IsRemovalBlocked)
+            throw new LaunchValidationException(RemovalBlockedMessage, RemovalBlockedDetail, "RemovalBlocked");
+
         var cmd = preferQuiet && app.HasQuietUninstall
             ? !string.IsNullOrWhiteSpace(app.QuietUninstallString) ? app.QuietUninstallString
                 : BuildQuietCommand(app.UninstallString, app.InstallerType) ?? app.UninstallString

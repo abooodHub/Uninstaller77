@@ -26,6 +26,7 @@ public partial class AppListViewModel
     private bool _closeAfterReview;
     private bool _recoveringQueue;
     public bool IsQueuePreview { get; private set; }
+    internal bool IsInstallationRecording { get; set; }
     [ObservableProperty] private UninstallOperationState _operationState = UninstallOperationState.Idle;
     [ObservableProperty] private bool _verificationRetrying;
     [ObservableProperty] private string _attentionDetails = "";
@@ -62,6 +63,7 @@ public partial class AppListViewModel
             BatchCompleted = saved.Items.Count(item => item.StartedAt is not null);
             BatchResults = new(saved.Items.Where(item => item.FinishedAt is not null).Select(item =>
                 ToBatchDisplay(new(item.App, item.State == UninstallOperationState.Completed ? BatchItemState.Succeeded
+                    : item.State == UninstallOperationState.Partial ? BatchItemState.Partial
                     : item.State == UninstallOperationState.Failed ? BatchItemState.Failed : item.State == UninstallOperationState.NotInstalled ? BatchItemState.Skipped : BatchItemState.Cancelled, item.Message, item.ExitCode, item.FailureCode))));
             ProgressTitle = "Uninstaller 77";
             var criticalFailure = saved.Reviews?.LastOrDefault(review => review.Action == CriticalQueueFailureAction);
@@ -72,9 +74,10 @@ public partial class AppListViewModel
                 : LanguageCode == "ar" ? "انقطع طابور سابق. راجع حالة البرامج يدويًا؛ لن تُستأنف أي إزالة تلقائيًا." : "A previous queue was interrupted. Review the applications manually; no removal will resume automatically.";
             CurrentStage = ProgressStatus;
             ProgressApp = _queueSnapshot.Items.FirstOrDefault(item => item.State == UninstallOperationState.NeedsUserAttention || item.StartedAt is not null && item.FinishedAt is null)?.App
-                ?? _queueSnapshot.Items.LastOrDefault(item => item.StartedAt is not null)?.App ?? _queueSnapshot.Items.FirstOrDefault()?.App;
+                ?? LastStartedItem(_queueSnapshot.Items)?.App
+                ?? (_queueSnapshot.Items.Count > 0 ? _queueSnapshot.Items[0].App : null);
             AttentionDetails = corruptJournal?.Evidence ?? criticalFailure?.Evidence ?? UiStrings.Get(LanguageCode, "queueReviewUncertain");
-            ReviewObservation = _queueSnapshot.Reviews?.LastOrDefault()?.Evidence ?? "";
+            ReviewObservation = _queueSnapshot.Reviews is { Count: > 0 } reviews ? reviews[^1].Evidence : "";
             IsProgressOpen = true;
         }
         catch (Exception ex)
@@ -84,6 +87,13 @@ public partial class AppListViewModel
             OperationState = UninstallOperationState.NeedsUserAttention;
             SetWebNotice("Queue recovery requires manual review: " + ex.Message, true);
         }
+    }
+
+    private static QueueJournalItem? LastStartedItem(IReadOnlyList<QueueJournalItem> items)
+    {
+        for (var index = items.Count - 1; index >= 0; index--)
+            if (items[index].StartedAt is not null) return items[index];
+        return null;
     }
 
     private void UpdateQueueItem(InstalledApp app, UninstallOperationState state, string message = "", int? exitCode = null, string failureCode = "")
@@ -97,7 +107,7 @@ public partial class AppListViewModel
             Items = _queueSnapshot.Items.Select(item => item.App.Id != app.Id ? item : item with
             {
                 State = state, StartedAt = item.StartedAt ?? now,
-                FinishedAt = state is UninstallOperationState.Completed or UninstallOperationState.Failed or UninstallOperationState.Cancelled or UninstallOperationState.NotInstalled ? now : null,
+                FinishedAt = state is UninstallOperationState.Completed or UninstallOperationState.Partial or UninstallOperationState.Failed or UninstallOperationState.Cancelled or UninstallOperationState.NotInstalled ? now : null,
                 Message = message, ExitCode = exitCode, FailureCode = failureCode
             }).ToArray()
         };
@@ -106,9 +116,11 @@ public partial class AppListViewModel
     }
 
     private async Task RunQueueAsync(List<InstalledApp> queue, bool quiet, bool scanResiduals,
-        Func<InstalledApp, Task<UninstallService.UninstallResult>>? fixtureExecutor = null)
+        Func<InstalledApp, Task<UninstallService.UninstallResult>>? fixtureExecutor = null,
+        bool? protect = null, bool? deep = null)
     {
         if (queue.Count == 0 || IsBatchRunning || IsUnregisteredBusy || IsCleaningResiduals || IsResidualOpen) return;
+        if (IsInstallationRecording) { SetWebNotice(UiStrings.Get(LanguageCode, "monitorFinishBeforeRemoval"), true); return; }
         IsQueuePreview = fixtureExecutor is not null;
         if (fixtureExecutor is not null && queue.Any(app => app.Source != "Fixture" || !string.IsNullOrWhiteSpace(app.UninstallString)))
             throw new InvalidOperationException("Only isolated command-free fixtures may use the test executor.");
@@ -132,9 +144,24 @@ public partial class AppListViewModel
         OnPropertyChanged(nameof(CanOpenSystemRestore)); OnPropertyChanged(nameof(ProtectionWarning));
         _queueControl = new(); _closeAfterReview = false;
         LastInsertedRecordId = 0;
+        LastResidualDeletedCount = 0;
+        LastResidualKeptCount = 0;
+        LastResidualDeletedBytes = 0;
+        LastResidualDeletedRegistryCount = 0;
+        LastResidualDeletedFileBytes = 0;
+        ResidualDeletionAttempted = false;
+        ResidualDeleteProcessedCount = 0;
+        ResidualDeleteTotalCount = 0;
+        LastResidualSkippedCount = 0;
+        LastResidualFailedCount = 0;
+        ResidualDeleteCurrentApp = "";
         _cleanupApp = null;
         ResidualReviewGroups = [];
+        ResidualDeletedByApp.Clear();
+        _residualReviewQueue = [];
         var verifiedRemovals = new List<(InstalledApp App, int RecordId)>();
+        var shortcutSnapshots = new Dictionary<string, DesktopShortcutCleanupService.Snapshot>(StringComparer.Ordinal);
+        var registryEvidence = new Dictionary<string, RegistryResidualEvidence>(StringComparer.Ordinal);
         AttentionDetails = ""; AttentionFailureCode = ""; AttentionExitCode = null;
         BatchState = BatchQueueState.Running; StopBatchAfterCurrent = false;
         OperationState = UninstallOperationState.Preparing;
@@ -152,7 +179,7 @@ public partial class AppListViewModel
                 CurrentStage = ProgressStatus = UiStrings.Get(LanguageCode, "protectionPreparing");
                 ProgressApp = null;
                 ProtectionReport = await _queueProtection.PrepareAsync(_queueSnapshot.QueueId, now, queue,
-                    ProtectBeforeUninstall, () => _queueControl.StopRequested);
+                    protect ?? ProtectBeforeUninstall, () => _queueControl.StopRequested);
                 PreparingProtection = false;
                 OnPropertyChanged(nameof(CanCancelCurrent)); OnPropertyChanged(nameof(ProtectionWarning));
                 try
@@ -178,13 +205,14 @@ public partial class AppListViewModel
                 _uninstallCts?.Dispose(); _uninstallCts = new();
                 UpdateQueueItem(app, UninstallOperationState.Preparing);
                 var result = fixtureExecutor is not null ? await fixtureExecutor(app) : await _uninstaller.UninstallAsync(app, quiet,
-                    new DispatcherProgress<string>(_dispatcher, message =>
+                    progress: new DispatcherProgress<string>(_dispatcher, message =>
                     {
                         var shown = LocalizeEngineProgress(message, app);
                         CurrentStage = shown; ProgressStatus = shown;
                         ProgressLogs.Add($"[{DateTime.Now:HH:mm:ss}] {shown}");
-                    }), _uninstallCts.Token,
-                    new DispatcherProgress<UninstallOperationState>(_dispatcher, state => UpdateQueueItem(app, state)));
+                    }),
+                    state: new DispatcherProgress<UninstallOperationState>(_dispatcher, state => UpdateQueueItem(app, state)),
+                    stopRequested: () => _queueControl.StopRequested, ct: _uninstallCts.Token);
 
                 AttentionDetails = result.Error;
                 AttentionFailureCode = result.DiagnosticCode;
@@ -205,9 +233,11 @@ public partial class AppListViewModel
                 }
 
                 var item = BatchUninstallCoordinator.ToItemResult(app, result);
+                app.RegistrationLastWrite = result.RegistrationLastWrite;
                 var itemState = item.State;
                 var terminal = itemState switch
-                { BatchItemState.Succeeded => UninstallOperationState.Completed, BatchItemState.Cancelled => UninstallOperationState.Cancelled,
+                { BatchItemState.Succeeded => UninstallOperationState.Completed, BatchItemState.Partial => UninstallOperationState.Partial,
+                    BatchItemState.Cancelled => UninstallOperationState.Cancelled,
                     BatchItemState.Skipped => UninstallOperationState.NotInstalled,
                     BatchItemState.NeedsAttention => UninstallOperationState.NeedsUserAttention, _ => UninstallOperationState.Failed };
                 var evidence = UninstallService.FormatResultEvidence(result);
@@ -219,16 +249,21 @@ public partial class AppListViewModel
                     LastInsertedRecordId = _db.AddRecord(new UninstallRecord
                     {
                         AppId = app.Id, AppName = app.Name, Publisher = app.Publisher, Version = app.Version,
-                        CachedIconPath = app.CachedIconPath, UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        CachedIconPath = app.CachedIconPath, UninstallDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
                         InstallerType = app.TypeDisplay, ExitCode = result.ExitCode, ExitObserved = item.ExitCode.HasValue,
                         Success = itemState == BatchItemState.Succeeded, Outcome = itemState == BatchItemState.Skipped ? "NotInstalled" : itemState.ToString(),
-                        ResidualStatus = "ResidualScan:NotScanned", Notes = evidence + "\nOperation: " + _queueSnapshot!.Items.First(entry => entry.App.Id == app.Id).OperationId
+                        ResidualStatus = "ResidualScan:NotScanned", Notes = evidence + "\nOperation: " + _queueSnapshot!.Items.First(entry => entry.App.Id == app.Id).OperationId,
+                        ResidualIdentity = ResidualHistoryIdentity.Capture(app)
                     });
                 }
                 catch (Exception ex) { throw new BatchHistoryWriteException(app, result, ex); }
                 if (result.Success && result.Verification == VerificationStatus.VerifiedRemoved)
+                {
                     verifiedRemovals.Add((app, LastInsertedRecordId));
-                if (itemState is BatchItemState.Succeeded or BatchItemState.Skipped)
+                    if (result.ShortcutSnapshot is not null) shortcutSnapshots[app.Id] = result.ShortcutSnapshot;
+                    if (result.RegistryEvidence is not null) registryEvidence[app.Id] = result.RegistryEvidence;
+                }
+                if (result.Verification == VerificationStatus.VerifiedRemoved)
                 {
                     _allApps.Remove(app); Apps.Remove(app); app.IsBatchSelected = false; UpdateCounts();
                 }
@@ -253,15 +288,18 @@ public partial class AppListViewModel
             }
             _journal.Save(_queueSnapshot);
             OperationState = runResult.CriticalFailure || runResult.NeedsUserAttention ? UninstallOperationState.NeedsUserAttention
-                : runResult.Failed > 0 ? UninstallOperationState.Failed : runResult.Stopped ? UninstallOperationState.Cancelled : UninstallOperationState.Completed;
+                : runResult.Failed > 0 || runResult.Partial > 0 ? UninstallOperationState.Failed : runResult.Stopped ? UninstallOperationState.Cancelled : UninstallOperationState.Completed;
             ProgressStatus = CurrentStage = UiStrings.Get(LanguageCode, runResult.CriticalFailure ? "queueCriticalError"
                 : runResult.NeedsUserAttention ? "queueNeedsAttention" : runResult.Stopped ? "queueStoppedAfter" : "queueFinished");
             ProgressLogs.Add($"[{DateTime.Now:HH:mm:ss}] {ProgressStatus}");
             OnPropertyChanged(nameof(QueueItems)); OnPropertyChanged(nameof(HistoryCount));
-            if (!runResult.CriticalFailure && !runResult.NeedsUserAttention && scanResiduals && !StopBatchAfterCurrent && verifiedRemovals.Count > 0)
+            if (UseWebUi && fixtureExecutor is null && runResult.State == BatchQueueState.Succeeded)
+                await Task.Delay(450);
+            if (!runResult.CriticalFailure && !runResult.NeedsUserAttention && scanResiduals)
             {
-                if (UseWebUi) await ReviewQueueResidualsAsync(queue, verifiedRemovals);
-                else if (queue.Count == 1) await ReviewSingleResidualsAsync(verifiedRemovals[0].App, verifiedRemovals[0].RecordId);
+                if (UseWebUi) await ReviewQueueResidualsAsync(queue, verifiedRemovals, shortcutSnapshots, registryEvidence, deep ?? DeepResidualScan);
+                else if (queue.Count == 1 && verifiedRemovals.Count > 0)
+                    await ReviewSingleResidualsAsync(verifiedRemovals[0].App, verifiedRemovals[0].RecordId);
             }
         }
         catch (Exception ex)
@@ -305,9 +343,10 @@ public partial class AppListViewModel
         ResidualItems.Clear(); ResidualScannedLocations = 0;
         _db.UpdateResidualInfo(recordId, "ResidualScan:Scanning", 0, 0);
         CurrentStage = UiStrings.Get(LanguageCode, "scanningResiduals");
-        var scan = await _residualScanner.ScanResidualsAsync(app, CancellationToken.None,
+        var scan = await _residualScanner.ScanResidualsAsync(app,
             new DispatcherProgress<ResidualScanService.ScanProgress>(_dispatcher, value =>
-            { ResidualScanStage = LocalizeResidualStage(value.Stage); ResidualScannedLocations = value.ScannedLocations; }));
+            { ResidualScanStage = LocalizeResidualStage(value.Stage); ResidualScannedLocations = value.ScannedLocations; }),
+            DeepResidualScan, CancellationToken.None);
         ResidualState = scan.State;
         ResidualScannedLocations = scan.ScannedLocations;
         ResidualStatusMessage = scan.Message(LanguageCode);
@@ -318,7 +357,8 @@ public partial class AppListViewModel
             ResidualItems = new(scan.Items);
             foreach (var item in ResidualItems) item.PropertyChanged += ResidualItemChanged;
             _cleanupApp = app;
-            ResidualStatusMessage = string.Format(UiStrings.Get(LanguageCode, "foundResidualsStatus"), scan.Items.Count, app.Name, ResidualScannedLocations);
+            ResidualStatusMessage = string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                UiStrings.Get(LanguageCode, "foundResidualsStatus"), scan.Items.Count, app.Name, ResidualScannedLocations);
             IsResidualOpen = true;
         }
         else SetWebNotice(scan.Message(LanguageCode), scan.State == ResidualScanState.Failed);

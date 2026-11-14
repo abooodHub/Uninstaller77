@@ -21,6 +21,8 @@ public class UninstallRecord
     public int CleanedItemsCount { get; set; }
     public long CleanedSizeBytes { get; set; }
     public string Notes { get; set; } = string.Empty;
+    // Captured from the inventory before uninstall; legacy rows intentionally lack this evidence.
+    public string ResidualIdentity { get; set; } = string.Empty;
 
     public string CleanedSizeDisplay => CleanedSizeBytes switch
     {

@@ -1,0 +1,26 @@
+export const installationWords = {
+  en: {
+    title: 'Install Monitor', start: 'Choose folder and start', finish: 'Finish recording',
+    instructions: 'Choose the destination folder. Start your installer after the baseline is ready, then finish recording when setup and its helpers have exited.',
+    registry: 'Product Registry key (optional)', observed: 'Observed', linked: 'Linked to registration',
+    files: 'Baseline files', keys: 'Baseline Registry keys', changes: 'Recorded changes',
+    live: 'During installation', comparison: 'Final comparison', empty: 'No installation logs yet.',
+    latest: 'Latest entries shown', logs: 'Installation logs', file: 'File', registryKey: 'Registry',
+    cancel: 'Cancel recording', export: 'Export full report',
+    states: { Capturing: 'Capturing baseline', Monitoring: 'Ready — recording changes', Finishing: 'Capturing final state', Cancelling: 'Stopping recording', Cancelled: 'Recording cancelled', Completed: 'Recording complete', Failed: 'Recording failed', Interrupted: 'Recording interrupted' },
+    actions: { Created: 'Created', Modified: 'Modified', Changed: 'Changed', Deleted: 'Removed' },
+    association: 'The log can link items to a verified registration. It does not identify the process that wrote them.',
+  },
+  ar: {
+    title: 'مراقب التثبيت', start: 'اختر المجلد وابدأ التسجيل', finish: 'إنهاء التسجيل',
+    instructions: 'اختر مجلد الوجهة. شغّل المثبّت بعد اكتمال اللقطة الأولية، ثم أنهِ التسجيل عند انتهاء المثبّت والعمليات المساعدة.',
+    registry: 'مفتاح المنتج في Registry (اختياري)', observed: 'تغيير مرصود', linked: 'مرتبط بتسجيل البرنامج',
+    files: 'الملفات قبل التثبيت', keys: 'مفاتيح Registry قبل التثبيت', changes: 'التغييرات المسجّلة',
+    live: 'أثناء التثبيت', comparison: 'المقارنة النهائية', empty: 'لا توجد سجلات تثبيت بعد.',
+    latest: 'أحدث السطور المعروضة', logs: 'سجلات التثبيت', file: 'ملف', registryKey: 'Registry',
+    cancel: 'إلغاء التسجيل', export: 'تصدير التقرير الكامل',
+    states: { Capturing: 'جارٍ التقاط الحالة الأولية', Monitoring: 'جاهز — جارٍ تسجيل التغييرات', Finishing: 'جارٍ التقاط الحالة النهائية', Cancelling: 'جارٍ إيقاف التسجيل', Cancelled: 'أُلغي التسجيل', Completed: 'اكتمل التسجيل', Failed: 'تعذّر التسجيل', Interrupted: 'انقطع التسجيل' },
+    actions: { Created: 'أُنشئ', Modified: 'عُدّل', Changed: 'تغيّر', Deleted: 'أُزيل' },
+    association: 'يمكن ربط عناصر بتسجيل برنامج موثّق. السجل لا يحدد العملية التي كتبتها.',
+  },
+} as const

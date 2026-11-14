@@ -33,7 +33,7 @@ internal sealed class UninstallerProcess : IDisposable
     // creates the same suspended/job-tracked launch after independently validating
     // the current registration. No descendant can run before job assignment.
     public static async Task<UninstallerProcess> StartRegisteredAsync(ProcessStartInfo info,
-        string registryPath, bool quiet, CancellationToken cancellation = default, BrowserHandoffContext? context = null)
+        string registryPath, bool quiet, BrowserHandoffContext? context = null, CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
         if (!info.UseShellExecute) return Start(info, context);
@@ -186,6 +186,8 @@ internal sealed class UninstallerProcess : IDisposable
     [DllImport("kernel32.dll", EntryPoint = "QueryInformationJobObject", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool QueryJobProcesses(SafeFileHandle job, int infoClass, IntPtr info, int size, out int returned);
     [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1838:Avoid StringBuilder parameters for P/Invokes",
+        Justification = "CreateProcessW is documented to mutate its command-line buffer; the builder supplies the required writable UTF-16 storage.")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcess(string application, StringBuilder command, IntPtr processAttributes,
         IntPtr threadAttributes, bool inherit, uint flags, IntPtr environment, string? directory,

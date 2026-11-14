@@ -7,7 +7,11 @@ public enum ResidualType
     Directory,
     File,
     RegistryKey,
-    RegistryValue
+    RegistryValue,
+    Service,
+    ScheduledTask,
+    Shortcut,
+    InstallationInfo
 }
 
 public enum ConfidenceLevel
@@ -26,15 +30,25 @@ public partial class ResidualItem : ObservableObject
     public string Reason { get; set; } = string.Empty;
     public bool CanClean { get; set; }
     internal string? ReviewedFingerprint { get; init; }
+    internal string? ReviewedTarget { get; init; }
+    internal Services.RegistryResidualEvidence? RegistryEvidence { get; init; }
     internal IReadOnlyList<Services.UnregisteredAppService.Entry>? ReviewedFiles { get; init; }
     public string Title => string.IsNullOrEmpty(Path) ? string.Empty : (System.IO.Path.GetFileName(Path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : Path);
 
     [ObservableProperty]
-    private bool _isSelected = true;
+    private bool _isSelected;
 
     public string SizeDisplay => SizeBytes switch
     {
-        0 when Type != ResidualType.File => Type is ResidualType.RegistryKey or ResidualType.RegistryValue ? "Registry" : "Unknown",
+        0 when Type != ResidualType.File => Type switch
+        {
+            ResidualType.RegistryKey or ResidualType.RegistryValue => "Registry",
+            ResidualType.Service => "Service",
+            ResidualType.ScheduledTask => "Scheduled task",
+            ResidualType.Shortcut => "Shortcut",
+            ResidualType.InstallationInfo => "Installation info",
+            _ => "Unknown"
+        },
         < 1024 => $"{SizeBytes} B",
         < 1024 * 1024 => $"{SizeBytes / 1024.0:F1} KB",
         < 1024 * 1024 * 1024 => $"{SizeBytes / 1024.0 / 1024.0:F1} MB",
@@ -47,6 +61,10 @@ public partial class ResidualItem : ObservableObject
         ResidualType.File => "📄 File",
         ResidualType.RegistryKey => "🔑 Registry Key",
         ResidualType.RegistryValue => "🏷 Registry Value",
+        ResidualType.Service => "Service",
+        ResidualType.ScheduledTask => "Scheduled task",
+        ResidualType.Shortcut => "Shortcut",
+        ResidualType.InstallationInfo => "Installation info",
         _ => "Item"
     };
 

@@ -1,0 +1,23 @@
+name: Website checks
+on:
+  push:
+    branches: [main]
+    paths: ['docs/site/**', '.github/workflows/site-checks.yml']
+  pull_request:
+    paths: ['docs/site/**', '.github/workflows/site-checks.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: site-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject unsafe website translation sinks
+        run: node --test docs/site/tests/site-safety.test.mjs

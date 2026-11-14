@@ -2,7 +2,7 @@ using WinUninstaller.Models;
 
 namespace WinUninstaller.Services;
 
-public enum BatchItemState { Succeeded, Failed, Skipped, NeedsAttention, Cancelled }
+public enum BatchItemState { Succeeded, Failed, Skipped, NeedsAttention, Cancelled, Partial }
 public enum BatchQueueState { Running, Succeeded, PartialFailure, CriticalFailure, Stopped, NeedsUserAttention, CompletedWithSkips }
 
 public sealed record BatchItemResult(InstalledApp App, BatchItemState State, string Message, int? ExitCode = null, string FailureCode = "");
@@ -12,11 +12,12 @@ public sealed record BatchRunResult(IReadOnlyList<BatchItemResult> Items, bool S
     public int Processed => Items.Count(i => i.State != BatchItemState.Skipped);
     public int Successful => Items.Count(i => i.State == BatchItemState.Succeeded);
     public int Failed => Items.Count(i => i.State == BatchItemState.Failed);
+    public int Partial => Items.Count(i => i.State == BatchItemState.Partial);
     public int Skipped => Items.Count(i => i.State == BatchItemState.Skipped);
     public bool NeedsUserAttention => Items.Any(i => i.State == BatchItemState.NeedsAttention);
     public BatchQueueState State => CriticalFailure ? BatchQueueState.CriticalFailure
         : NeedsUserAttention ? BatchQueueState.NeedsUserAttention
-        : Failed > 0 ? BatchQueueState.PartialFailure
+        : Failed > 0 || Partial > 0 ? BatchQueueState.PartialFailure
         : Stopped ? BatchQueueState.Stopped : Skipped > 0 ? BatchQueueState.CompletedWithSkips : BatchQueueState.Succeeded;
 }
 
@@ -124,9 +125,12 @@ public static class BatchUninstallCoordinator
         result.FailureCode is "UacDenied" or "Cancelled" ? BatchItemState.Cancelled
         : !result.Success && result.FailureCode == "RegistrationAbsent" && result.Verification == VerificationStatus.VerifiedRemoved
             ? BatchItemState.Skipped
-        : result.Success && result.Verification is VerificationStatus.VerifiedRemoved or VerificationStatus.PartiallyRemoved
+        : result.Success && result.Verification == VerificationStatus.PartiallyRemoved
+            ? BatchItemState.Partial
+        : result.Success && result.Verification == VerificationStatus.VerifiedRemoved
             ? BatchItemState.Succeeded
         : result.FailureCode is "UninstallerExitError" or "MsiUnknownProduct" or "MsiBusy" or "MsiInstallFailure" or "RegistrationChanged" or "RegistrationUnavailable"
+            or "MsiSourceUnavailable" or "MsiPolicyBlocked" or "RemovalBlocked"
             or "InsufficientPrivileges" or "AccessDenied" or "ElevationRequired" or "LaunchAccessDenied" or "LaunchFailed"
             ? BatchItemState.Failed
         : result.Verification == VerificationStatus.Unknown ? BatchItemState.NeedsAttention : BatchItemState.Failed;

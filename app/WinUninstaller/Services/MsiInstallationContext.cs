@@ -35,6 +35,8 @@ internal static class MsiInstallationContext
     }
 
     [DllImport("msi.dll", EntryPoint = "MsiGetProductInfoExW", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1838:Avoid StringBuilder parameters for P/Invokes",
+        Justification = "MsiGetProductInfoExW uses a caller-sized mutable UTF-16 buffer and its returned length; this bounded buffer is part of the verified MSI context check.")]
     private static extern uint GetProductInfo(string productCode, string? userSid, uint context, string property,
         StringBuilder? value, ref uint length);
 
